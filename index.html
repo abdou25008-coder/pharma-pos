@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <meta name="theme-color" content="#0284c7">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>مدير مبيعات الأدويه - منظومة توزيع الأدوية والمخزون</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css?v=20260909_06">
+  <script>
+    if ('caches' in window) {
+      caches.keys().then(names => {
+        for (let name of names) {
+          if (name !== 'pharma-pos-v5') {
+            caches.delete(name);
+          }
+        }
+      });
+    }
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        for (let reg of regs) {
+          reg.update();
+        }
+      });
+      navigator.serviceWorker.register('sw.js?v=20260909_06').catch(() => {});
+    }
+  </script>
+</head>
+<body>
+
+  <div class="app-layout" id="appLayout">
+
+    <!-- Top Application Bar (Header) -->
+    <header class="top-bar" id="appTopBar">
+      <div class="brand-section">
+        <button class="back-btn" id="backBtn" onclick="navigateTo('home')">➔</button>
+        <div>
+          <h2 id="topBarTitle">مدير مبيعات الأدويه</h2>
+          <p id="topBarSubtitle">منظومة مبيعات وتوزيع الأدوية والمخزون</p>
+        </div>
+      </div>
+
+      <!-- Desktop Navigation Tabs (Visible on Computer Screens) -->
+      <nav class="desktop-nav" id="desktopNav">
+        <button class="nav-tab active" data-nav="home" onclick="navigateTo('home')">🏠 الرئيسية</button>
+        <button class="nav-tab" data-nav="purchase" onclick="navigateTo('purchase')">📥 فواتير الشراء</button>
+        <button class="nav-tab" data-nav="sales" onclick="navigateTo('sales')">🏷️ إصدار فاتورة بيع</button>
+        <button class="nav-tab" data-nav="inventory" onclick="navigateTo('inventory')">💊 الأرصدة والمخزون</button>
+        <button class="nav-tab" data-nav="customers" onclick="navigateTo('customers')">👥 سجل العملاء</button>
+        <button class="nav-tab" data-nav="purchase_history" onclick="navigateTo('purchase_history')">📊 سجل الموردين</button>
+      </nav>
+
+      <!-- Actions Section -->
+      <div class="header-actions">
+        <!-- View Mode Switcher Button -->
+        <button class="view-toggle-btn" id="viewToggleBtn" onclick="toggleViewMode()" title="التبديل بين وضع الكمبيوتر ووضع الموبايل">
+          📱 عرض موبايل
+        </button>
+
+        <!-- Cloud Status Badge -->
+        <span id="cloudStatusBadge" class="cloud-badge cloud-online" title="مزامنة سحابية مباشرة">
+          ☁️ سحابي متصل
+        </span>
+
+        <!-- Refresh Button -->
+        <button class="refresh-top-btn" id="refreshTopBtn" onclick="refreshAppDirectly()" title="تحديث ومزامنة البيانات">
+          🔄 تحديث
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Screen Content Area -->
+    <main class="screen-content-wrapper">
+      <div class="screen-content" id="screenContent">
+        <!-- Dynamically Rendered by app.js -->
+      </div>
+    </main>
+
+    <!-- Mobile Bottom Navigation Bar (Visible on Mobile Screens or Mobile Mode) -->
+    <nav class="bottom-nav" id="bottomNav">
+      <button class="nav-item active" data-nav="home" onclick="navigateTo('home')">
+        <span class="icon">🏠</span>
+        <span>الرئيسية</span>
+      </button>
+      <button class="nav-item" data-nav="purchase" onclick="navigateTo('purchase')">
+        <span class="icon">📥</span>
+        <span>المشتريات</span>
+      </button>
+      <button class="nav-item" data-nav="sales" onclick="navigateTo('sales')">
+        <span class="icon">🏷️</span>
+        <span>البيع</span>
+      </button>
+      <button class="nav-item" data-nav="inventory" onclick="navigateTo('inventory')">
+        <span class="icon">💊</span>
+        <span>الأرصدة</span>
+      </button>
+      <button class="nav-item" data-nav="customers" onclick="navigateTo('customers')">
+        <span class="icon">👥</span>
+        <span>العملاء</span>
+      </button>
+    </nav>
+
+    <!-- Dynamic Modal Overlay Container -->
+    <div class="modal-overlay" id="appModalOverlay" onclick="closeAppModal(event)">
+      <div class="modal-sheet" id="appModalContent" onclick="event.stopPropagation()">
+        <!-- Dynamic Form Inside -->
+      </div>
+    </div>
+
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="app.js?v=20260909_09"></script>
+</body>
+</html>
