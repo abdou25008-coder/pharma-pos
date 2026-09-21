@@ -2,7 +2,7 @@
   "name": "مدير مبيعات الأدويه",
   "short_name": "مدير الأدوية",
   "description": "منظومة مبيعات وتوزيع الأدوية والمخزون وحسابات الصيدليات",
-  "start_url": "/index.html",
+  "start_url": "./index.html",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0f172a",
