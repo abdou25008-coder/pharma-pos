@@ -1705,7 +1705,30 @@ function renderInventoryScreen() {
     return matchQuery && matchLow;
   });
 
+  const totalStockQty = db.products.reduce((acc, p) => acc + (p.stockQuantity || 0), 0);
+  const totalStockCostVal = db.products.reduce((acc, p) => {
+    const netCost = (p.officialPrice || 0) * (1 - (p.purchaseDiscountRate || 0) / 100);
+    return acc + ((p.stockQuantity || 0) * netCost);
+  }, 0);
+  const totalStockPublicVal = db.products.reduce((acc, p) => acc + ((p.stockQuantity || 0) * (p.officialPrice || 0)), 0);
+
   screenContainer.innerHTML = `
+    <!-- Total Inventory Valuation KPI Cards -->
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:8px; margin-bottom:10px;">
+      <div class="card" style="background:#f0fdf4; border-color:#bbf7d0; padding:10px; text-align:center;">
+        <span style="font-size:11px; color:#166534; display:block; font-weight:700;">📦 إجمالي رصيد المخزن</span>
+        <b style="font-size:16px; color:#15803d; font-weight:800;">${totalStockQty} علبة</b>
+      </div>
+      <div class="card" style="background:#e0f2fe; border-color:#bae6fd; padding:10px; text-align:center;">
+        <span style="font-size:11px; color:#0369a1; display:block; font-weight:700;">💰 رأس مال البضاعة (شراء)</span>
+        <b style="font-size:15px; color:#0284c7; font-weight:800;">${totalStockCostVal.toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ج.م</b>
+      </div>
+      <div class="card" style="background:#fef3c7; border-color:#fde68a; padding:10px; text-align:center;">
+        <span style="font-size:11px; color:#92400e; display:block; font-weight:700;">🏷️ قيمة البضاعة (جمهور)</span>
+        <b style="font-size:15px; color:#b45309; font-weight:800;">${totalStockPublicVal.toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ج.م</b>
+      </div>
+    </div>
+
     <!-- Search Bar & Filters -->
     <div class="card" style="padding:10px;">
       <input class="input" placeholder="🔍 بحث باسم الدواء..." value="${inventorySearchQuery}" oninput="inventorySearchQuery=this.value; renderInventoryScreen();" />
@@ -1726,7 +1749,12 @@ function renderInventoryScreen() {
 
     <!-- Medicines List with Quick Adjust & Delete Buttons -->
     <div class="inventory-grid">
-      ${filtered.map(p => `
+      ${filtered.map(p => {
+        const netPurchasePrice = (p.officialPrice || 0) * (1 - (p.purchaseDiscountRate || 0) / 100);
+        const totalItemCost = (p.stockQuantity || 0) * netPurchasePrice;
+        const totalItemPublic = (p.stockQuantity || 0) * (p.officialPrice || 0);
+
+        return `
         <div class="card">
           <div style="display:flex; justify-content:space-between; align-items:flex-start;">
             <div>
@@ -1749,18 +1777,31 @@ function renderInventoryScreen() {
 
           <div class="row-2" style="margin-top:8px; padding-top:6px; border-top:1px solid var(--border); font-size:11px; color:var(--text-muted);">
             <div>سعر الجمهور الرسمي: <b style="color:#000;">${p.officialPrice} ج.م</b></div>
-            <div>صافي سعر الشراء: <b>${(p.officialPrice * (1 - p.purchaseDiscountRate/100)).toFixed(2)} ج.م</b></div>
+            <div>صافي سعر الشراء: <b>${netPurchasePrice.toFixed(2)} ج.م</b></div>
           </div>
           <div class="row-2" style="font-size:11px; color:var(--text-muted); margin-top:2px;">
             <div>خصم الشراء: <b style="color:#0284c7;">${p.purchaseDiscountRate}%</b></div>
             <div>خصم البيع: <b style="color:var(--warning);">${p.saleDiscountRate}%</b> (صافي: ${(p.officialPrice * (1 - p.saleDiscountRate/100)).toFixed(2)} ج.م)</div>
           </div>
 
+          <!-- Stock Valuation Section for this specific item -->
+          <div style="margin-top:8px; padding:8px 10px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
+            <div>
+              <span style="font-size:11px; color:#1e40af; font-weight:700; display:block;">💰 إجمالي قيمة رصيد البضاعة (شراء):</span>
+              <b style="font-size:14px; color:#0284c7; font-weight:800;">${totalItemCost.toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ج.م</b>
+            </div>
+            <div style="text-align:left;">
+              <span style="font-size:10px; color:var(--text-muted); display:block;">بسعر الجمهور الرسمي</span>
+              <b style="font-size:12px; color:#334155;">${totalItemPublic.toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ج.م</b>
+            </div>
+          </div>
+
           <div style="margin-top:8px; font-size:11px; color:#0284c7; font-weight:700; text-align:left; cursor:pointer;" onclick="openProductMovements(${p.id})">
             عرض سجل حركة الدواء (وارد / صادر) 📜 >
           </div>
         </div>
-      `).join('')}
+      `;
+      }).join('')}
     </div>
   `;
 }
