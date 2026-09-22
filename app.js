@@ -1,5 +1,29 @@
 // مدير مبيعات الأدويه - Engine & Database
 const STORAGE_KEY = 'PHARMA_SALES_MANAGER_DB_V2';
+const CLOUD_SERVER_STORAGE_KEY = 'PHARMA_CLOUD_SERVER_URL';
+const DEFAULT_CLOUD_SERVER_URL = 'https://mile-wearing-listed-joseph.trycloudflare.com';
+let isCloudConnected = false;
+let isSyncing = false;
+
+function getCloudServerBaseUrl() {
+  try {
+    const custom = localStorage.getItem(CLOUD_SERVER_STORAGE_KEY);
+    if (custom && custom.trim()) {
+      return custom.trim().replace(/\/+$/, '');
+    }
+    if (typeof window !== 'undefined' && window.location) {
+      const origin = window.location.origin;
+      if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1') || origin.includes(':4200'))) {
+        return origin;
+      }
+    }
+  } catch(e) {}
+  return DEFAULT_CLOUD_SERVER_URL;
+}
+
+function getCloudApiUrl() {
+  return getCloudServerBaseUrl() + '/api/db';
+}
 
 function initPharmaDatabase() {
   const existing = localStorage.getItem(STORAGE_KEY);
@@ -143,20 +167,38 @@ function initPharmaDatabase() {
 let db = initPharmaDatabase();
 
 function updateCloudBadge(isOnline) {
+  isCloudConnected = isOnline;
   const badge = document.getElementById('cloudStatusBadge');
   if (!badge) return;
+  badge.style.cursor = 'pointer';
+  badge.onclick = openCloudSettingsModal;
   if (isOnline) {
     badge.className = 'cloud-badge cloud-online';
     badge.innerHTML = '☁️ سحابي متصل';
+    badge.title = 'متصل بالسحابة المركزية ومزامن بنجاح - انقر لإدارة السحابة';
   } else {
     badge.className = 'cloud-badge cloud-offline';
     badge.innerHTML = '💾 وضع محلي';
+    badge.title = 'يعمل على الذاكرة المحلية للجهاز فقط - انقر لربط السحابة والمزامنة';
   }
 }
 
 async function syncWithCloud(silent = false) {
+  if (isSyncing) return false;
+  isSyncing = true;
   try {
-    const res = await fetch('/api/db');
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), 9000) : null;
+    const targetUrl = getCloudApiUrl();
+    const fetchOptions = {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' }
+    };
+    if (controller) fetchOptions.signal = controller.signal;
+
+    const res = await fetch(targetUrl, fetchOptions);
+    if (timeoutId) clearTimeout(timeoutId);
+
     if (res.ok) {
       const cloudData = await res.json();
       if (cloudData && Array.isArray(cloudData.products)) {
@@ -165,22 +207,27 @@ async function syncWithCloud(silent = false) {
         updateCloudBadge(true);
         if (!silent) {
           navigateTo(currentScreen);
+          showToast("تم مزامنة البيانات سحابياً بنجاح! ☁️");
         }
+        isSyncing = false;
         return true;
       }
     }
+    updateCloudBadge(false);
   } catch (err) {
     console.warn('Cloud sync offline or unreachable:', err);
     updateCloudBadge(false);
   }
+  isSyncing = false;
   return false;
 }
 
 function saveDB() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-  // Sync to Cloud Storage directly
+  // Sync to Central Cloud Storage directly
   if (typeof fetch !== 'undefined') {
-    fetch('/api/db', {
+    const targetUrl = getCloudApiUrl();
+    fetch(targetUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(db)
@@ -197,6 +244,7 @@ function saveDB() {
 }
 
 function resetPharmaDemoData() {
+  if (!confirm("هل أنت متأكد من رغبتك في إعادة ضبط البيانات الافتراضية؟")) return;
   localStorage.removeItem(STORAGE_KEY);
   db = initPharmaDatabase();
   saveDB();
@@ -204,8 +252,9 @@ function resetPharmaDemoData() {
   showToast("تم إعادة ضبط بيانات الأدوية بنجاح!");
 }
 
-// زر صغير بالأعلى لتحديث التطبيق مباشرة مع مزامنة سحابية
+// زر بالأعلى لتحديث التطبيق مباشرة مع مزامنة سحابية
 async function refreshAppDirectly() {
+  showToast("جارٍ تحديث ومزامنة البيانات... ⏳");
   const synced = await syncWithCloud(false);
   if (!synced) {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -213,20 +262,273 @@ async function refreshAppDirectly() {
       try { db = JSON.parse(saved); } catch(e) {}
     }
     navigateTo(currentScreen);
-    showToast("تم التحديث محلياً (السحابة غير متصلة)");
-  } else {
-    showToast("تم المزامنة والتحديث سحابياً بنجاح! ☁️");
+    showToast("تم التحديث محلياً (السحابة غير متصلة) 💾");
   }
 }
 
-// Automatically sync from cloud server on page load
+// نافذة إدارة المزامنة السحابية والنسخ الاحتياطي
+function openCloudSettingsModal() {
+  const currentBaseUrl = getCloudServerBaseUrl();
+  const isDefault = (currentBaseUrl === DEFAULT_CLOUD_SERVER_URL);
+  const productsCount = db.products ? db.products.length : 0;
+  const purchasesCount = db.purchaseInvoices ? db.purchaseInvoices.length : 0;
+  const salesCount = db.salesInvoices ? db.salesInvoices.length : 0;
+
+  const html = `
+    <div style="font-family: inherit; color: var(--text-main); line-height: 1.6;">
+      <div style="text-align: center; margin-bottom: 18px;">
+        <div style="font-size: 36px; margin-bottom: 4px;">☁️</div>
+        <h3 style="margin: 0; font-size: 18px; font-weight: 800;">إدارة المزامنة السحابية والنسخ الاحتياطي</h3>
+        <p style="margin: 4px 0 0 0; font-size: 12px; color: var(--text-muted);">
+          ربط جميع أجهزتك (كمبيوتر، هاتف، تابلت) بقاعدة بيانات واحدة مركزية
+        </p>
+      </div>
+
+      <!-- Live Status Card -->
+      <div style="background: ${isCloudConnected ? '#ecfdf5' : '#fef3c7'}; border: 1.5px solid ${isCloudConnected ? '#10b981' : '#f59e0b'}; border-radius: 12px; padding: 14px; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 24px;">${isCloudConnected ? '🟢' : '🟡'}</span>
+            <div>
+              <div style="font-weight: 800; font-size: 14px; color: ${isCloudConnected ? '#065f46' : '#92400e'};">
+                ${isCloudConnected ? 'متصل بالسحابة المركزية ومزامن بنجاح' : 'يعمل على الذاكرة المحلية للجهاز فقط'}
+              </div>
+              <div style="font-size: 11px; color: ${isCloudConnected ? '#047857' : '#b45309'}; word-break: break-all; margin-top: 2px;">
+                الرابط المستخدم: <code style="direction:ltr; display:inline-block;">${currentBaseUrl}</code>
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-small btn-primary" onclick="testCloudConnectionModal()" style="font-size: 12px; padding: 6px 14px;">
+            ⚡ اختبار الاتصال
+          </button>
+        </div>
+      </div>
+
+      <!-- Device Data Summary -->
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; display: flex; justify-content: space-around; text-align: center;">
+        <div>
+          <div style="font-size: 11px; color: #64748b;">الأصناف المسجلة</div>
+          <div style="font-size: 16px; font-weight: 800; color: #0284c7;">${productsCount} دواء</div>
+        </div>
+        <div style="border-right: 1px solid #cbd5e1;"></div>
+        <div>
+          <div style="font-size: 11px; color: #64748b;">فواتير الشراء</div>
+          <div style="font-size: 16px; font-weight: 800; color: #059669;">${purchasesCount} فاتورة</div>
+        </div>
+        <div style="border-right: 1px solid #cbd5e1;"></div>
+        <div>
+          <div style="font-size: 11px; color: #64748b;">فواتير البيع</div>
+          <div style="font-size: 16px; font-weight: 800; color: #4f46e5;">${salesCount} فاتورة</div>
+        </div>
+      </div>
+
+      <!-- Cloud URL Configuration -->
+      <div style="background: #ffffff; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 16px;">
+        <label style="display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px; color: #1e293b;">
+          🌐 عنوان خادم السحابة المركزي (Cloud Server URL):
+        </label>
+        <div style="display: flex; gap: 8px;">
+          <input type="url" id="customCloudUrlInput" value="${currentBaseUrl}" 
+                 placeholder="https://..." 
+                 dir="ltr"
+                 style="flex: 1; padding: 10px 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-family: monospace;">
+          <button class="btn btn-primary" onclick="saveCustomCloudServerUrl()" style="padding: 10px 14px; font-size: 12px; white-space: nowrap;">
+            💾 حفظ واعتماد
+          </button>
+        </div>
+        ${!isDefault ? `
+          <button class="btn btn-outline btn-small" onclick="resetToDefaultCloudServerUrl()" style="margin-top: 8px; font-size: 11px; color: #64748b;">
+            🔄 استعادة الرابط السحابي الافتراضي
+          </button>
+        ` : ''}
+        <p style="font-size: 11px; color: #64748b; margin: 6px 0 0 0;">
+          💡 هذا الرابط هو المسؤول عن توحيد الأرصدة والمبيعات وفواتير الشراء بين جميع أجهزتك.
+        </p>
+      </div>
+
+      <!-- Two-way Sync Actions -->
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; font-size: 13px; font-weight: 700; margin-bottom: 8px; color: #1e293b;">
+          🔄 إجراءات المزامنة الفورية بين الأجهزة:
+        </label>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <button class="btn btn-outline" onclick="forcePullFromCloud()" style="padding: 12px 10px; font-size: 12px; font-weight: 700; border-color: #0284c7; color: #0284c7; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <span style="font-size: 18px;">⬇️</span>
+            <span>سحب البيانات من السحابة</span>
+            <span style="font-size: 10px; font-weight: normal; color: #64748b;">تحديث هذا الجهاز بأحدث البيانات</span>
+          </button>
+          <button class="btn btn-outline" onclick="forcePushToCloud()" style="padding: 12px 10px; font-size: 12px; font-weight: 700; border-color: #059669; color: #059669; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            <span style="font-size: 18px;">⬆️</span>
+            <span>رفع بيانات الجهاز للسحابة</span>
+            <span style="font-size: 10px; font-weight: normal; color: #64748b;">اعتماد بيانات هذا الجهاز للجميع</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Offline JSON Backup & Restore -->
+      <div style="background: #f1f5f9; border-radius: 12px; padding: 14px; margin-bottom: 14px;">
+        <label style="display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px; color: #1e293b;">
+          🗂️ النسخ الاحتياطي التام (بدون إنترنت - ملف محلي):
+        </label>
+        <p style="font-size: 11px; color: #64748b; margin: 0 0 10px 0;">
+          يمكنك تنزيل ملف نسخة احتياطية لبيانات الصيدلية بالكامل على هاتفك أو جهازك، ونقلها أو استرجاعها في أي وقت.
+        </p>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-outline" onclick="exportDatabaseBackup()" style="flex: 1; padding: 10px; font-size: 12px; font-weight: 700; border-color: #475569; color: #334155;">
+            📥 تنزيل نسخة JSON
+          </button>
+          <button class="btn btn-outline" onclick="triggerRestoreBackup()" style="flex: 1; padding: 10px; font-size: 12px; font-weight: 700; border-color: #475569; color: #334155;">
+            📤 استرجاع من ملف JSON
+          </button>
+          <input type="file" id="restoreBackupFileInput" accept=".json" style="display:none;" onchange="handleRestoreBackupFile(event)">
+        </div>
+      </div>
+
+      <div style="text-align: center; margin-top: 10px;">
+        <button class="btn btn-outline" onclick="closeAppModal()" style="min-width: 140px; padding: 10px 20px;">
+          إغلاق النافذة
+        </button>
+      </div>
+    </div>
+  `;
+
+  openAppModal("إدارة المزامنة السحابية والنسخ الاحتياطي", html, true);
+}
+
+async function testCloudConnectionModal() {
+  showToast("جارٍ اختبار الاتصال بالسحابة... ⏳");
+  const synced = await syncWithCloud(true);
+  if (synced) {
+    showToast("الاتصال بالسحابة سليم ويعمل بنجاح 🟢");
+  } else {
+    showToast("تعذر الاتصال بالسيرفر السحابي، تأكد من صحة الرابط أو عمل الخادم ⚠️");
+  }
+  openCloudSettingsModal();
+}
+
+function saveCustomCloudServerUrl() {
+  const input = document.getElementById('customCloudUrlInput');
+  if (!input) return;
+  const val = input.value.trim().replace(/\/+$/, '');
+  if (!val) {
+    showToast("يرجى إدخال رابط سيرفر صالح!");
+    return;
+  }
+  localStorage.setItem(CLOUD_SERVER_STORAGE_KEY, val);
+  showToast("تم حفظ رابط السيرفر السحابي بنجاح! ☁️");
+  testCloudConnectionModal();
+}
+
+function resetToDefaultCloudServerUrl() {
+  localStorage.removeItem(CLOUD_SERVER_STORAGE_KEY);
+  showToast("تمت استعادة الرابط السحابي الافتراضي");
+  openCloudSettingsModal();
+  syncWithCloud(false);
+}
+
+async function forcePullFromCloud() {
+  if (!confirm("هل أنت متأكد من سحب البيانات من السحابة؟ سيتم تحديث هذا الجهاز بنسخة السحابة.")) return;
+  showToast("جارٍ سحب البيانات من السحابة... ⏳");
+  const ok = await syncWithCloud(false);
+  if (ok) {
+    showToast("تم سحب أحدث بيانات من السحابة بنجاح! 🎉");
+    closeAppModal();
+  } else {
+    showToast("فشل السحب: السيرفر السحابي غير متاح حالياً ⚠️");
+  }
+}
+
+async function forcePushToCloud() {
+  if (!confirm("هل أنت متأكد من رفع بيانات هذا الجهاز للسحابة؟ ستصبح هذه البيانات هي المعتمدة لجميع الأجهزة.")) return;
+  showToast("جارٍ رفع وتصدير البيانات للسحابة... ⏳");
+  try {
+    const res = await fetch(getCloudApiUrl(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(db)
+    });
+    if (res.ok) {
+      updateCloudBadge(true);
+      showToast("تم رفع البيانات للسحابة المركزية بنجاح! ☁️");
+      closeAppModal();
+    } else {
+      showToast("فشل الرفع: استجاب السيرفر بخطأ " + res.status);
+    }
+  } catch(e) {
+    showToast("فشل الرفع: تعذر الوصول للسيرفر السحابي ⚠️");
+  }
+}
+
+function exportDatabaseBackup() {
+  try {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db, null, 2));
+    const downloadAnchor = document.createElement('a');
+    const dateStr = new Date().toISOString().slice(0, 10);
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", `pharma_backup_${dateStr}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+    showToast("تم تنزيل ملف النسخة الاحتياطية بنجاح 📥");
+  } catch(e) {
+    showToast("حدث خطأ أثناء تنزيل النسخة الاحتياطية");
+  }
+}
+
+function triggerRestoreBackup() {
+  const input = document.getElementById('restoreBackupFileInput');
+  if (input) {
+    input.value = '';
+    input.click();
+  }
+}
+
+function handleRestoreBackupFile(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      if (!parsed || !Array.isArray(parsed.products)) {
+        throw new Error("ملف النسخة الاحتياطية غير صالح، تنقصه بيانات الأدوية");
+      }
+      if (confirm(`تم قراءة النسخة الاحتياطية بنجاح!\nتحتوي على: ${parsed.products.length} دواء و ${parsed.salesInvoices ? parsed.salesInvoices.length : 0} فاتورة بيع.\nهل تريد استرجاعها الآن؟`)) {
+        db = parsed;
+        saveDB();
+        navigateTo(currentScreen);
+        closeAppModal();
+        showToast("تم استرجاع النسخة الاحتياطية بنجاح وتحديث السحابة! 🎉");
+      }
+    } catch(err) {
+      alert("خطأ في قراءة ملف النسخة الاحتياطية: " + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+// Automatically sync from cloud server on page load and visibility change
 if (typeof window !== 'undefined') {
   window.addEventListener('DOMContentLoaded', () => {
-    syncWithCloud(false);
+    syncWithCloud(true);
   });
+  // Auto-sync when user returns to tab / app
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      syncWithCloud(true);
+    }
+  });
+  // Periodically check every 45 seconds if tab is active
+  setInterval(() => {
+    if (!document.hidden) {
+      syncWithCloud(true);
+    }
+  }, 45000);
   // Also try immediately
   syncWithCloud(true);
 }
+
 
 // Current state
 let currentScreen = 'home';
@@ -414,9 +716,18 @@ function renderHomeScreen() {
           <p>قائمة العملاء وفواتير كل عميل ومسحوباته السابقة</p>
         </div>
       </div>
+
+      <div class="action-card" style="background:#0369a1; cursor:pointer;" onclick="openCloudSettingsModal()">
+        <div class="icon-box">☁️</div>
+        <div class="info">
+          <h3>المزامنة السحابية والنسخ الاحتياطي (ربط الأجهزة)</h3>
+          <p>ربط الهاتف والكمبيوتر بسيرفر موحد، رفع وسحب البيانات، وحفظ نسخة JSON</p>
+        </div>
+      </div>
     </div>
   `;
 }
+
 
 // -------------------------------------------------------------
 // 2. PURCHASE SCREEN (Pharma Pricing & Fixed Price + Discount)
