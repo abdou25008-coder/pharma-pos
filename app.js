@@ -1,7 +1,7 @@
 // مدير مبيعات الأدويه - Engine & Database
 const STORAGE_KEY = 'PHARMA_SALES_MANAGER_DB_V2';
 const CLOUD_SERVER_STORAGE_KEY = 'PHARMA_CLOUD_SERVER_URL';
-const DEFAULT_CLOUD_SERVER_URL = 'https://mile-wearing-listed-joseph.trycloudflare.com';
+const DEFAULT_CLOUD_SERVER_URL = 'https://skating-took-encryption-pioneer.trycloudflare.com';
 let isCloudConnected = false;
 let isSyncing = false;
 
