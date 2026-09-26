@@ -1,7 +1,7 @@
 // مدير مبيعات الأدويه - Engine & Database
 const STORAGE_KEY = 'PHARMA_SALES_MANAGER_DB_V2';
 const CLOUD_SERVER_STORAGE_KEY = 'PHARMA_CLOUD_SERVER_URL';
-const DEFAULT_CLOUD_SERVER_URL = 'https://skating-took-encryption-pioneer.trycloudflare.com';
+const DEFAULT_CLOUD_SERVER_URL = 'https://pharma-pos-4d68a-default-rtdb.firebaseio.com';
 let isCloudConnected = false;
 let isSyncing = false;
 
@@ -22,8 +22,14 @@ function getCloudServerBaseUrl() {
 }
 
 function getCloudApiUrl() {
-  return getCloudServerBaseUrl() + '/api/db';
+  const base = getCloudServerBaseUrl();
+  if (base.includes('firebaseio.com') || base.includes('firebasedatabase.app')) {
+    if (base.endsWith('.json')) return base;
+    return base.replace(/\/+$/, '') + '/pharma_db.json';
+  }
+  return base + '/api/db';
 }
+
 
 function initPharmaDatabase() {
   const existing = localStorage.getItem(STORAGE_KEY);
@@ -211,6 +217,15 @@ async function syncWithCloud(silent = false) {
         }
         isSyncing = false;
         return true;
+      } else if (res.status === 200 && (targetUrl.includes('firebaseio.com') || targetUrl.includes('firebasedatabase.app'))) {
+        // قاعدة بيانات Firebase جديدة وفارغة: نرفع لها بياناتنا المحلية لتأسيسها فوراً
+        updateCloudBadge(true);
+        saveDB();
+        if (!silent) {
+          showToast("تم ربط وتأسيس سحابة Google Firebase بنجاح! ☁️");
+        }
+        isSyncing = false;
+        return true;
       }
     }
     updateCloudBadge(false);
@@ -227,8 +242,9 @@ function saveDB() {
   // Sync to Central Cloud Storage directly
   if (typeof fetch !== 'undefined') {
     const targetUrl = getCloudApiUrl();
+    const isFirebase = targetUrl.includes('firebaseio.com') || targetUrl.includes('firebasedatabase.app');
     fetch(targetUrl, {
-      method: 'POST',
+      method: isFirebase ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(db)
     }).then(res => {
@@ -409,9 +425,13 @@ async function testCloudConnectionModal() {
 function saveCustomCloudServerUrl() {
   const input = document.getElementById('customCloudUrlInput');
   if (!input) return;
-  const val = input.value.trim().replace(/\/+$/, '');
+  let val = input.value.trim().replace(/\/+$/, '');
   if (!val) {
     showToast("يرجى إدخال رابط سيرفر صالح!");
+    return;
+  }
+  if (val.includes('console.firebase.google.com')) {
+    alert("⚠️ انتبه: لقد قمت بنسخ رابط شريط المتصفح (لوحة تحكم Firebase Console) وليس رابط قاعدة البيانات!\n\nرابط السحابة الحقيقي موجود داخل صفحة Firebase تحت تبويب (Data) ومكتوب فوق شجرة البيانات بجوار رمز النسخ 🔗، وينتهي بـ firebaseio.com أو firebasedatabase.app.\n\nيرجى التوجه لتبويب Data ونسخ الرابط من داخل الصفحة.");
     return;
   }
   localStorage.setItem(CLOUD_SERVER_STORAGE_KEY, val);
@@ -442,8 +462,10 @@ async function forcePushToCloud() {
   if (!confirm("هل أنت متأكد من رفع بيانات هذا الجهاز للسحابة؟ ستصبح هذه البيانات هي المعتمدة لجميع الأجهزة.")) return;
   showToast("جارٍ رفع وتصدير البيانات للسحابة... ⏳");
   try {
-    const res = await fetch(getCloudApiUrl(), {
-      method: 'POST',
+    const targetUrl = getCloudApiUrl();
+    const isFirebase = targetUrl.includes('firebaseio.com') || targetUrl.includes('firebasedatabase.app');
+    const res = await fetch(targetUrl, {
+      method: isFirebase ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(db)
     });
