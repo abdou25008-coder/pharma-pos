@@ -9,7 +9,12 @@ function getCloudServerBaseUrl() {
   try {
     const custom = localStorage.getItem(CLOUD_SERVER_STORAGE_KEY);
     if (custom && custom.trim()) {
-      return custom.trim().replace(/\/+$/, '');
+      const clean = custom.trim().replace(/\/+$/, '');
+      if (clean.includes('console.firebase.google.com') || clean.includes('trycloudflare.com')) {
+        localStorage.removeItem(CLOUD_SERVER_STORAGE_KEY);
+        return DEFAULT_CLOUD_SERVER_URL;
+      }
+      return clean;
     }
     if (typeof window !== 'undefined' && window.location) {
       const origin = window.location.origin;
@@ -31,13 +36,49 @@ function getCloudApiUrl() {
 }
 
 
+const DEFAULT_SUPPLIERS = [
+  { id: 1, name: "شركة ابن سينا فارما للتوزيع", phone: "0225100000", repName: "أ. محمد عبد الله" },
+  { id: 2, name: "شركة المتحدة للصيادلة (UCP)", phone: "0227100000", repName: "أ. طارق محمود" },
+  { id: 3, name: "شركة فارما أوفرسيز", phone: "0224100000", repName: "أ. حسام فوزي" }
+];
+
+function toCleanArray(val) {
+  if (!val) return [];
+  if (Array.isArray(val)) return val.filter(Boolean);
+  if (typeof val === 'object') return Object.values(val).filter(Boolean);
+  return [];
+}
+
+function normalizeDatabase(raw) {
+  const data = (raw && typeof raw === 'object') ? raw : {};
+  data.products = toCleanArray(data.products);
+  data.customers = toCleanArray(data.customers);
+  data.suppliers = toCleanArray(data.suppliers);
+  if (data.suppliers.length === 0) {
+    data.suppliers = JSON.parse(JSON.stringify(DEFAULT_SUPPLIERS));
+  }
+  data.purchaseInvoices = toCleanArray(data.purchaseInvoices).map(inv => ({
+    ...inv,
+    items: toCleanArray(inv.items)
+  }));
+  data.salesInvoices = toCleanArray(data.salesInvoices).map(inv => ({
+    ...inv,
+    items: toCleanArray(inv.items)
+  }));
+  data.discountAlerts = toCleanArray(data.discountAlerts);
+  data.movements = toCleanArray(data.movements);
+  return data;
+}
+
 function initPharmaDatabase() {
   const existing = localStorage.getItem(STORAGE_KEY);
   if (existing) {
-    try { return JSON.parse(existing); } catch(e) {}
+    try {
+      return normalizeDatabase(JSON.parse(existing));
+    } catch(e) {}
   }
 
-  const initialDB = {
+  const initialDB = normalizeDatabase({
     products: [
       {
         id: 1,
@@ -100,11 +141,7 @@ function initPharmaDatabase() {
       { id: 2, name: "د. أحمد نور", phone: "01122334455", address: "شارع فيصل - الجيزة", totalPurchases: 7890 },
       { id: 3, name: "د. حسام فوزي", phone: "01233445566", address: "مدينة نصر - القاهرة", totalPurchases: 2900 }
     ],
-    suppliers: [
-      { id: 1, name: "شركة ابن سينا فارما للتوزيع", phone: "0225100000", repName: "أ. محمد عبد الله" },
-      { id: 2, name: "شركة المتحدة للصيادلة (UCP)", phone: "0227100000", repName: "أ. طارق محمود" },
-      { id: 3, name: "شركة فارما أوفرسيز", phone: "0224100000", repName: "أ. حسام فوزي" }
-    ],
+    suppliers: JSON.parse(JSON.stringify(DEFAULT_SUPPLIERS)),
     purchaseInvoices: [
       {
         id: 1,
@@ -164,7 +201,7 @@ function initPharmaDatabase() {
       { id: 1, productId: 1, productName: "أوجمنتين 1 جم 14 قرص", movementType: "PURCHASE_IN", quantity: 30, previousStock: 25, newStock: 55, referenceInvoiceNumber: "PUR-8821", timestamp: Date.now() - 86400000 * 3 },
       { id: 2, productId: 1, productName: "أوجمنتين 1 جم 14 قرص", movementType: "SALE_OUT", quantity: -10, previousStock: 55, newStock: 45, referenceInvoiceNumber: "SAL-10294", timestamp: Date.now() - 86400000 * 1 }
     ]
-  };
+  });
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(initialDB));
   return initialDB;
@@ -207,18 +244,21 @@ async function syncWithCloud(silent = false) {
 
     if (res.ok) {
       const cloudData = await res.json();
-      if (cloudData && Array.isArray(cloudData.products)) {
-        db = cloudData;
+      if (cloudData && typeof cloudData === 'object' && Object.keys(cloudData).length > 0) {
+        db = normalizeDatabase(cloudData);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
         updateCloudBadge(true);
         if (!silent) {
           navigateTo(currentScreen);
           showToast("تم مزامنة البيانات سحابياً بنجاح! ☁️");
+        } else if (typeof currentScreen !== 'undefined' && currentScreen === 'home') {
+          renderHomeScreen();
         }
         isSyncing = false;
         return true;
       } else if (res.status === 200 && (targetUrl.includes('firebaseio.com') || targetUrl.includes('firebasedatabase.app'))) {
         // قاعدة بيانات Firebase جديدة وفارغة: نرفع لها بياناتنا المحلية لتأسيسها فوراً
+        db = normalizeDatabase(db);
         updateCloudBadge(true);
         saveDB();
         if (!silent) {
@@ -238,6 +278,7 @@ async function syncWithCloud(silent = false) {
 }
 
 function saveDB() {
+  db = normalizeDatabase(db);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
   // Sync to Central Cloud Storage directly
   if (typeof fetch !== 'undefined') {
@@ -275,7 +316,7 @@ async function refreshAppDirectly() {
   if (!synced) {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
-      try { db = JSON.parse(saved); } catch(e) {}
+      try { db = normalizeDatabase(JSON.parse(saved)); } catch(e) {}
     }
     navigateTo(currentScreen);
     showToast("تم التحديث محلياً (السحابة غير متصلة) 💾");
@@ -517,7 +558,7 @@ function handleRestoreBackupFile(event) {
         throw new Error("ملف النسخة الاحتياطية غير صالح، تنقصه بيانات الأدوية");
       }
       if (confirm(`تم قراءة النسخة الاحتياطية بنجاح!\nتحتوي على: ${parsed.products.length} دواء و ${parsed.salesInvoices ? parsed.salesInvoices.length : 0} فاتورة بيع.\nهل تريد استرجاعها الآن؟`)) {
-        db = parsed;
+        db = normalizeDatabase(parsed);
         saveDB();
         navigateTo(currentScreen);
         closeAppModal();
@@ -623,6 +664,7 @@ function toggleViewMode() {
 }
 
 function navigateTo(screen) {
+  db = normalizeDatabase(db);
   currentScreen = screen;
   if (backBtn) {
     backBtn.style.display = (screen === 'home') ? 'none' : 'flex';
@@ -2040,11 +2082,17 @@ function renderSalesScreen() {
   if (!currentSalesInvoiceNo) {
     currentSalesInvoiceNo = `SAL-${Math.floor(10000 + Math.random() * 90000)}`;
   }
+  if (db.customers.length > 0 && !db.customers.some(c => c.id == currentSalesCustomerId)) {
+    currentSalesCustomerId = db.customers[0].id;
+  }
 
   calculateAndRenderSalesUI();
 }
 
 function calculateAndRenderSalesUI() {
+  if (db.customers.length > 0 && !db.customers.some(c => c.id == currentSalesCustomerId)) {
+    currentSalesCustomerId = db.customers[0].id;
+  }
   const subtotalOfficial = currentSalesItems.reduce((acc, it) => acc + (it.quantity * it.officialPrice), 0);
   const totalDiscAmount = currentSalesItems.reduce((acc, it) => acc + ((it.quantity * it.officialPrice) * (it.saleDiscountRate / 100)), 0);
   const grandTotal = currentSalesItems.reduce((acc, it) => acc + it.lineTotal, 0);
@@ -2060,8 +2108,8 @@ function calculateAndRenderSalesUI() {
         <div class="form-group">
           <label>العميل</label>
           <div style="display:flex; gap:6px;">
-            <select class="input" id="saleCustomerSelect" onchange="currentSalesCustomerId = parseInt(this.value);">
-              ${db.customers.map(c => `<option value="${c.id}" ${c.id === currentSalesCustomerId ? 'selected' : ''}>${c.name}</option>`).join('')}
+            <select class="input" id="saleCustomerSelect" onchange="currentSalesCustomerId = Number(this.value);">
+              ${db.customers.map(c => `<option value="${c.id}" ${c.id == currentSalesCustomerId ? 'selected' : ''}>${c.name}</option>`).join('')}
             </select>
             <button class="btn btn-outline btn-small" title="إضافة عميل" onclick="openAddCustomerModal()">+</button>
           </div>
@@ -2301,7 +2349,7 @@ function shareCurrentInvoiceViaWhatsApp() {
 }
 
 // =============================================================
-// PDF INVOICE REPORTING & WHATSAPP SHARING
+// PDF INVOICE REPORTING & WHATSAPP SHARING (Direct 2D Canvas Engine)
 // =============================================================
 
 function formatInvoiceDate(timestamp) {
@@ -2320,194 +2368,394 @@ function formatInvoiceDate(timestamp) {
   }
 }
 
-function buildInvoicePrintableHTML(inv) {
-  const items = inv.items || [];
+function drawRoundedRect(ctx, x, y, w, h, r, fill, stroke, lineWidth = 1) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  if (fill) {
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+  if (stroke) {
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+  }
+}
+
+function renderInvoiceToCanvas(inv) {
+  const items = toCleanArray(inv.items);
   const subtotalOfficial = items.reduce((acc, it) => acc + ((Number(it.quantity) || 0) * (Number(it.officialPrice) || 0)), 0);
   const grandTotal = Number(inv.grandTotal) || items.reduce((acc, it) => acc + (Number(it.lineTotal) || 0), 0);
   const totalDiscAmount = Math.max(0, subtotalOfficial - grandTotal);
   const totalUnits = items.reduce((acc, it) => acc + (Number(it.quantity) || 0), 0);
 
+  const W = 1240;
+  const rowH = 54;
+  const H = Math.max(1750, 440 + (items.length * rowH) + 460);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const FONT = "'Tajawal', 'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif";
+
+  // 1. White Page Background & Border Frame
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+  drawRoundedRect(ctx, 28, 28, W - 56, H - 56, 12, '#ffffff', '#cbd5e1', 2);
+  ctx.fillStyle = '#0284c7';
+  ctx.fillRect(30, 30, W - 60, 10);
+
+  // 2. Header Section (Right: Branding, Left: Official Invoice Badge)
+  drawRoundedRect(ctx, W - 132, 62, 72, 72, 16, '#e0f2fe', '#7dd3fc', 2);
+  ctx.font = '38px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#0284c7';
+  ctx.fillText('💊', W - 96, 111);
+
+  ctx.direction = 'rtl';
+  ctx.textAlign = 'right';
+  ctx.font = '800 32px ' + FONT;
+  ctx.fillStyle = '#0369a1';
+  ctx.fillText('مدير مبيعات الأدويه', W - 150, 96);
+
+  ctx.font = '700 17px ' + FONT;
+  ctx.fillStyle = '#64748b';
+  ctx.fillText('منظومة توزيع الأدوية والمخزون الصيدلي الذكية', W - 150, 128);
+
+  // Left Header Badge & Number
+  drawRoundedRect(ctx, 60, 58, 245, 44, 10, '#0284c7', null);
+  ctx.textAlign = 'center';
+  ctx.font = '800 20px ' + FONT;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('فاتورة مبيعات رسمية', 182, 87);
+
+  ctx.textAlign = 'left';
+  ctx.direction = 'ltr';
+  ctx.font = '800 20px ' + FONT;
+  ctx.fillStyle = '#0f172a';
+  ctx.fillText('Invoice: #' + (inv.invoiceNumber || 'SAL-000'), 60, 128);
+
+  ctx.direction = 'rtl';
+  ctx.textAlign = 'left';
+  ctx.font = '700 15px ' + FONT;
+  ctx.fillStyle = '#475569';
+  ctx.fillText('التاريخ: ' + formatInvoiceDate(inv.date), 60, 156);
+
+  // Header Bottom Divider
+  ctx.strokeStyle = '#0284c7';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(60, 178);
+  ctx.lineTo(W - 60, 178);
+  ctx.stroke();
+
+  // 3. Customer & Meta Info Box
+  drawRoundedRect(ctx, 60, 198, W - 120, 136, 12, '#f8fafc', '#cbd5e1', 1.5);
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(480, 214);
+  ctx.lineTo(480, 318);
+  ctx.stroke();
+
+  // Right side: Customer Details
+  ctx.direction = 'rtl';
+  ctx.textAlign = 'right';
+  ctx.font = '700 15px ' + FONT;
+  ctx.fillStyle = '#64748b';
+  ctx.fillText('بيانات العميل / الصيدلية المستلمة:', W - 85, 228);
+
+  ctx.font = '800 24px ' + FONT;
+  ctx.fillStyle = '#0f172a';
+  ctx.fillText('العميل: ' + (inv.customerName || 'عميل نقدي عام'), W - 85, 266);
+
+  const phoneStr = inv.customerPhone ? ('رقم الهاتف: ' + inv.customerPhone) : 'رقم الهاتف: —';
+  const addrStr = inv.customerAddress ? ('   |   العنوان: ' + inv.customerAddress) : '';
+  ctx.font = '700 16px ' + FONT;
+  ctx.fillStyle = '#334155';
+  ctx.fillText(phoneStr + addrStr, W - 85, 304);
+
+  // Left side: Invoice Status & Counts
+  drawRoundedRect(ctx, 275, 214, 180, 34, 8, '#dcfce7', '#86efac', 1);
+  ctx.textAlign = 'center';
+  ctx.font = '800 15px ' + FONT;
+  ctx.fillStyle = '#15803d';
+  ctx.fillText('✓ فاتورة معتمدة', 365, 237);
+
+  ctx.textAlign = 'right';
+  ctx.font = '700 16px ' + FONT;
+  ctx.fillStyle = '#334155';
+  ctx.fillText('عدد الأصناف بالفاتورة: ' + items.length + ' صنف', 455, 278);
+  ctx.fillText('إجمالي عدد العبوات: ' + totalUnits + ' علبة', 455, 308);
+
+  // 4. Items Table Header
+  const tableY = 356;
+  const headerH = 52;
+  ctx.fillStyle = '#0284c7';
+  ctx.fillRect(60, tableY, 1120, headerH);
+
+  ctx.strokeStyle = '#38bdf8';
+  ctx.lineWidth = 1;
+  [210, 350, 460, 600, 720, 1120].forEach(vx => {
+    ctx.beginPath();
+    ctx.moveTo(vx, tableY);
+    ctx.lineTo(vx, tableY + headerH);
+    ctx.stroke();
+  });
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '800 17px ' + FONT;
+  ctx.textAlign = 'center';
+  ctx.fillText('م', 1150, tableY + 33);
+  ctx.textAlign = 'right';
+  ctx.fillText('اسم الصنف / الدواء', 1104, tableY + 33);
+  ctx.textAlign = 'center';
+  ctx.fillText('الكمية', 660, tableY + 33);
+  ctx.fillText('سعر الجمهور', 530, tableY + 33);
+  ctx.fillText('الخصم %', 405, tableY + 33);
+  ctx.fillText('صافي العلبة', 280, tableY + 33);
+  ctx.fillText('الإجمالي الصافي', 135, tableY + 33);
+
+  // 5. Items Table Rows
+  let curY = tableY + headerH;
+  items.forEach((it, idx) => {
+    ctx.fillStyle = (idx % 2 === 0) ? '#ffffff' : '#f1f5f9';
+    ctx.fillRect(60, curY, 1120, rowH);
+
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(60, curY, 1120, rowH);
+
+    [210, 350, 460, 600, 720, 1120].forEach(vx => {
+      ctx.beginPath();
+      ctx.moveTo(vx, curY);
+      ctx.lineTo(vx, curY + rowH);
+      ctx.stroke();
+    });
+
+    const textY = curY + 34;
+    const qty = Number(it.quantity) || 0;
+    const offPrice = Number(it.officialPrice) || 0;
+    const discRate = Number(it.saleDiscountRate) || 0;
+    const netUnit = Number(it.netUnitPrice) || (offPrice * (1 - discRate / 100));
+    const lineTot = Number(it.lineTotal) || (qty * netUnit);
+
+    ctx.textAlign = 'center';
+    ctx.font = '700 16px ' + FONT;
+    ctx.fillStyle = '#64748b';
+    ctx.fillText(String(idx + 1), 1150, textY);
+
+    ctx.textAlign = 'right';
+    ctx.font = '800 17px ' + FONT;
+    ctx.fillStyle = '#0f172a';
+    ctx.fillText(String(it.productName || ''), 1104, textY, 372);
+
+    ctx.textAlign = 'center';
+    ctx.font = '800 17px ' + FONT;
+    ctx.fillStyle = '#0f172a';
+    ctx.fillText(qty + ' علبة', 660, textY);
+
+    ctx.font = '700 16px ' + FONT;
+    ctx.fillStyle = '#475569';
+    ctx.fillText(offPrice.toFixed(2) + ' ج.م', 530, textY);
+
+    ctx.font = '800 16px ' + FONT;
+    ctx.fillStyle = '#b45309';
+    ctx.fillText(discRate.toFixed(1) + '%', 405, textY);
+
+    ctx.font = '800 16px ' + FONT;
+    ctx.fillStyle = '#0369a1';
+    ctx.fillText(netUnit.toFixed(2) + ' ج.م', 280, textY);
+
+    ctx.font = '800 17px ' + FONT;
+    ctx.fillStyle = '#059669';
+    ctx.fillText(lineTot.toFixed(2) + ' ج.م', 135, textY);
+
+    curY += rowH;
+  });
+
+  // 6. Financial Summary Box
+  const totalsY = curY + 28;
+  drawRoundedRect(ctx, 60, totalsY, 500, 178, 12, '#f8fafc', '#cbd5e1', 1.5);
+
+  ctx.textAlign = 'right';
+  ctx.font = '700 17px ' + FONT;
+  ctx.fillStyle = '#475569';
+  ctx.fillText('إجمالي سعر الجمهور الرسمي:', 536, totalsY + 38);
+  ctx.textAlign = 'left';
+  ctx.font = '800 18px ' + FONT;
+  ctx.fillStyle = '#0f172a';
+  ctx.fillText(subtotalOfficial.toFixed(2) + ' ج.م', 84, totalsY + 38);
+
+  ctx.textAlign = 'right';
+  ctx.font = '700 17px ' + FONT;
+  ctx.fillStyle = '#dc2626';
+  ctx.fillText('إجمالي خصم المبيعات الممنوح:', 536, totalsY + 76);
+  ctx.textAlign = 'left';
+  ctx.font = '800 18px ' + FONT;
+  ctx.fillStyle = '#dc2626';
+  ctx.fillText('-' + totalDiscAmount.toFixed(2) + ' ج.م', 84, totalsY + 76);
+
+  drawRoundedRect(ctx, 76, totalsY + 98, 468, 64, 10, '#ecfdf5', '#10b981', 2);
+  ctx.textAlign = 'right';
+  ctx.font = '800 20px ' + FONT;
+  ctx.fillStyle = '#065f46';
+  ctx.fillText('الصافي النهائي المستحق:', 524, totalsY + 138);
+  ctx.textAlign = 'left';
+  ctx.font = '800 24px ' + FONT;
+  ctx.fillStyle = '#059669';
+  ctx.fillText(grandTotal.toFixed(2) + ' ج.م', 96, totalsY + 138);
+
+  // 7. Signatures & Stamp Footer
+  const sigY = Math.max(totalsY + 235, H - 220);
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(60, sigY - 24);
+  ctx.lineTo(W - 60, sigY - 24);
+  ctx.stroke();
+
+  ctx.textAlign = 'center';
+  ctx.font = '700 16px ' + FONT;
+  ctx.fillStyle = '#334155';
+  ctx.fillText('توقيع المحاسب / مسؤول البيع', W - 240, sigY + 10);
+  ctx.fillText('توقيع العميل / المستلم', W / 2, sigY + 10);
+  ctx.fillText('ختم الصيدلية / المؤسسة', 240, sigY + 10);
+
+  ctx.strokeStyle = '#94a3b8';
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.moveTo(W - 350, sigY + 65);
+  ctx.lineTo(W - 130, sigY + 65);
+  ctx.moveTo((W / 2) - 110, sigY + 65);
+  ctx.lineTo((W / 2) + 110, sigY + 65);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(240, sigY + 58, 36, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.font = '700 12px ' + FONT;
+  ctx.fillStyle = '#94a3b8';
+  ctx.fillText('الختم الرسمي', 240, sigY + 63);
+
+  // Bottom Note
+  ctx.font = '700 14px ' + FONT;
+  ctx.fillStyle = '#64748b';
+  ctx.fillText('تم إصدار هذا التقرير آلياً عبر منظومة «مدير مبيعات الأدويه» • شكراً لحسن تعاملكم وثقتكم بنا', W / 2, H - 48);
+
+  return canvas;
+}
+
+function buildDirectPdfFromCanvas(canvas) {
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+  const base64 = dataUrl.split(',')[1];
+  const binStr = atob(base64);
+  const imgBytes = new Uint8Array(binStr.length);
+  for (let i = 0; i < binStr.length; i++) {
+    imgBytes[i] = binStr.charCodeAt(i);
+  }
+
+  const pageW = 595.28;
+  const pageH = Number((pageW * (canvas.height / canvas.width)).toFixed(2));
+  const contentStream = `q\n${pageW} 0 0 ${pageH} 0 0 cm\n/Im0 Do\nQ\n`;
+
+  const encoder = new TextEncoder();
+  const chunks = [];
+  const offsets = [];
+  let byteLength = 0;
+
+  function pushStr(str) {
+    const arr = encoder.encode(str);
+    chunks.push(arr);
+    byteLength += arr.length;
+  }
+  function pushBytes(arr) {
+    chunks.push(arr);
+    byteLength += arr.length;
+  }
+  function startObj(id) {
+    offsets[id] = byteLength;
+    pushStr(`${id} 0 obj\n`);
+  }
+
+  pushStr('%PDF-1.4\n%\xFF\xFF\xFF\xFF\n');
+
+  startObj(1);
+  pushStr('<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+
+  startObj(2);
+  pushStr('<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
+
+  startObj(3);
+  pushStr(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`);
+
+  startObj(4);
+  pushStr(`<< /Type /XObject /Subtype /Image /Width ${canvas.width} /Height ${canvas.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imgBytes.length} >>\nstream\n`);
+  pushBytes(imgBytes);
+  pushStr('\nendstream\nendobj\n');
+
+  startObj(5);
+  pushStr(`<< /Length ${contentStream.length} >>\nstream\n${contentStream}endstream\nendobj\n`);
+
+  const xrefOffset = byteLength;
+  pushStr('xref\n0 6\n0000000000 65535 f \n');
+  for (let i = 1; i <= 5; i++) {
+    pushStr(String(offsets[i]).padStart(10, '0') + ' 00000 n \n');
+  }
+  pushStr(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+
+  return new Blob(chunks, { type: 'application/pdf' });
+}
+
+function buildInvoicePrintableHTML(inv) {
+  const canvas = renderInvoiceToCanvas(inv);
+  const imgDataUrl = canvas.toDataURL('image/png');
   return `
-    <div id="invoiceReportA4Container" style="
-      width: 760px;
-      margin: 0 auto;
-      padding: 24px 28px;
-      background: #ffffff;
-      color: #0f172a;
-      direction: rtl;
-      font-family: 'Tajawal', -apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, Arial, sans-serif;
-      box-sizing: border-box;
-      line-height: 1.4;
-    ">
-      <!-- Header -->
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #0284c7; padding-bottom:14px; margin-bottom:16px;">
-        <div style="display:flex; align-items:center; gap:12px;">
-          <div style="width:48px; height:48px; background:#e0f2fe; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:26px; border:1px solid #bae6fd;">
-            💊
-          </div>
-          <div>
-            <h1 style="font-size:20px; font-weight:800; color:#0369a1; margin:0 0 4px 0; line-height:1.2;">مدير مبيعات الأدويه</h1>
-            <p style="font-size:11px; color:#64748b; margin:0; font-weight:500;">منظومة توزيع الأدوية والمخزون الصيدلي الذكية</p>
-          </div>
-        </div>
-
-        <div style="text-align:left;">
-          <div style="display:inline-block; background:#0284c7; color:#ffffff; padding:4px 14px; border-radius:6px; font-weight:800; font-size:13px; letter-spacing:0.5px;">
-            فاتورة بيع رسمية
-          </div>
-          <div style="font-size:14px; font-weight:800; color:#0f172a; margin-top:6px;">
-            رقم الفاتورة: <span style="color:#0284c7; direction:ltr; display:inline-block; font-family:monospace;">#${inv.invoiceNumber}</span>
-          </div>
-          <div style="font-size:11px; color:#64748b; margin-top:2px;">
-            📅 ${formatInvoiceDate(inv.date)}
-          </div>
-        </div>
-      </div>
-
-      <!-- Customer & Meta Box -->
-      <div style="display:grid; grid-template-columns: 1.2fr 0.8fr; gap:14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px 16px; margin-bottom:16px; font-size:12px;">
-        <div>
-          <div style="color:#64748b; font-size:11px; font-weight:700; margin-bottom:4px;">بيانات العميل / الصيدلية المستلمة:</div>
-          <div style="font-weight:800; font-size:15px; color:#0f172a; margin-bottom:2px;">
-            👤 ${inv.customerName || 'عميل نقدي عام'}
-          </div>
-          ${inv.customerPhone ? `
-            <div style="color:#475569; font-size:11px; margin-top:3px;">
-              📞 رقم الهاتف: <span style="direction:ltr; display:inline-block; font-weight:700;">${inv.customerPhone}</span>
-            </div>
-          ` : ''}
-          ${inv.customerAddress ? `
-            <div style="color:#475569; font-size:11px; margin-top:2px;">
-              📍 العنوان: ${inv.customerAddress}
-            </div>
-          ` : ''}
-        </div>
-
-        <div style="text-align:left; border-right:1px solid #e2e8f0; padding-right:14px;">
-          <div style="color:#64748b; font-size:11px; font-weight:700; margin-bottom:4px;">حالة الفاتورة والبنود:</div>
-          <div style="display:inline-block; background:#dcfce7; color:#15803d; font-weight:800; font-size:11px; padding:2px 8px; border-radius:4px; margin-bottom:4px;">
-            ✓ معتمدة ومسددة (نقداً)
-          </div>
-          <div style="color:#475569; font-size:11px; margin-top:2px;">
-            عدد الأصناف: <b>${items.length}</b> صنف
-          </div>
-          <div style="color:#475569; font-size:11px; margin-top:2px;">
-            إجمالي عدد العلب: <b>${totalUnits}</b> علبة
-          </div>
-        </div>
-      </div>
-
-      <!-- Items Table -->
-      <table style="width:100%; border-collapse:collapse; margin-bottom:16px; font-size:12px;">
-        <thead>
-          <tr style="background:#0284c7; color:#ffffff; font-weight:800;">
-            <th style="padding:8px 6px; text-align:center; border:1px solid #0284c7; width:34px;">م</th>
-            <th style="padding:8px 10px; text-align:right; border:1px solid #0284c7;">اسم الصنف / الدواء</th>
-            <th style="padding:8px 8px; text-align:center; border:1px solid #0284c7; width:65px;">الكمية</th>
-            <th style="padding:8px 8px; text-align:center; border:1px solid #0284c7; width:80px;">سعر الجمهور</th>
-            <th style="padding:8px 8px; text-align:center; border:1px solid #0284c7; width:65px;">الخصم %</th>
-            <th style="padding:8px 8px; text-align:center; border:1px solid #0284c7; width:80px;">صافي العلبة</th>
-            <th style="padding:8px 10px; text-align:left; border:1px solid #0284c7; width:95px;">الإجمالي</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${items.map((it, idx) => `
-            <tr style="background:${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
-              <td style="padding:7px 6px; text-align:center; border:1px solid #e2e8f0; font-weight:700; color:#64748b;">${idx + 1}</td>
-              <td style="padding:7px 10px; text-align:right; border:1px solid #e2e8f0; font-weight:700; color:#0f172a;">${it.productName}</td>
-              <td style="padding:7px 8px; text-align:center; border:1px solid #e2e8f0; font-weight:800; color:#0f172a;">${it.quantity} علبة</td>
-              <td style="padding:7px 8px; text-align:center; border:1px solid #e2e8f0; color:#475569;">${Number(it.officialPrice).toFixed(2)} ج.م</td>
-              <td style="padding:7px 8px; text-align:center; border:1px solid #e2e8f0; color:#b45309; font-weight:800;">${Number(it.saleDiscountRate).toFixed(1)}%</td>
-              <td style="padding:7px 8px; text-align:center; border:1px solid #e2e8f0; font-weight:700; color:#0369a1;">${Number(it.netUnitPrice).toFixed(2)} ج.م</td>
-              <td style="padding:7px 10px; text-align:left; border:1px solid #e2e8f0; font-weight:800; color:#059669;">${Number(it.lineTotal).toFixed(2)} ج.م</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-
-      <!-- Financial Totals Summary -->
-      <div style="display:flex; justify-content:flex-end; margin-bottom:18px;">
-        <div style="width:330px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px 16px; font-size:12px; box-sizing:border-box;">
-          <div style="display:flex; justify-content:space-between; margin-bottom:6px; color:#475569;">
-            <span>إجمالي سعر الجمهور الرسمي:</span>
-            <span style="font-weight:700;">${subtotalOfficial.toFixed(2)} ج.م</span>
-          </div>
-          <div style="display:flex; justify-content:space-between; margin-bottom:8px; color:#dc2626;">
-            <span>إجمالي خصم المبيعات الممنوح:</span>
-            <span style="font-weight:800;">-${totalDiscAmount.toFixed(2)} ج.م</span>
-          </div>
-          <div style="border-top:2px dashed #cbd5e1; margin-top:6px; padding-top:8px; display:flex; justify-content:space-between; align-items:center; background:#ecfdf5; margin-left:-8px; margin-right:-8px; margin-bottom:-6px; padding:10px 12px; border-radius:8px; border:1px solid #a7f3d0;">
-            <span style="font-weight:800; font-size:13px; color:#065f46;">الصافي النهائي المستحق:</span>
-            <span style="font-weight:800; font-size:17px; color:#059669;">${grandTotal.toFixed(2)} ج.م</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Signatures & Stamp -->
-      <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; margin-top:20px; padding-top:14px; border-top:1px solid #e2e8f0; text-align:center; font-size:11px; color:#64748b;">
-        <div>
-          <div style="font-weight:700; color:#334155; margin-bottom:28px;">توقيع المحاسب / مسؤول البيع</div>
-          <div style="border-bottom:1px dotted #94a3b8; width:75%; margin:0 auto;"></div>
-        </div>
-        <div>
-          <div style="font-weight:700; color:#334155; margin-bottom:28px;">توقيع العميل / المستلم</div>
-          <div style="border-bottom:1px dotted #94a3b8; width:75%; margin:0 auto;"></div>
-        </div>
-        <div>
-          <div style="font-weight:700; color:#334155; margin-bottom:10px;">ختم الصيدلية / الإدارة</div>
-          <div style="width:52px; height:52px; border:2px dashed #94a3b8; border-radius:50%; margin:0 auto; display:flex; align-items:center; justify-content:center; font-size:9px; color:#94a3b8;">
-            الختم هنا
-          </div>
-        </div>
-      </div>
-
-      <!-- Footer Note -->
-      <div style="text-align:center; margin-top:16px; font-size:10px; color:#94a3b8; border-top:1px solid #f1f5f9; padding-top:8px;">
-        تم إصدار هذا التقرير آلياً عبر منظومة «مدير مبيعات الأدويه» • شكراً لحسن تعاملكم وثقتكم بنا
-      </div>
+    <div id="invoiceReportA4Container" style="width:100%; max-width:780px; margin:0 auto; background:#ffffff; text-align:center;">
+      <img src="${imgDataUrl}" alt="فاتورة مبيعات ${inv.invoiceNumber}" style="width:100%; height:auto; display:block; border:1px solid #cbd5e1; border-radius:8px;" />
     </div>
   `;
 }
 
 async function generateInvoicePDFBlob(inv) {
-  if (typeof html2pdf === 'undefined') {
-    throw new Error('مكتبة توليد PDF غير متوفرة حالياً، يرجى التأكد من اتصال الإنترنت');
+  if (document.fonts && document.fonts.ready) {
+    try {
+      await Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 600))]);
+    } catch (e) {}
   }
 
-  const wrapper = document.createElement('div');
-  wrapper.id = 'tempPdfRenderWrapper';
-  wrapper.style.position = 'fixed';
-  wrapper.style.left = '-9999px';
-  wrapper.style.top = '0';
-  wrapper.style.width = '794px';
-  wrapper.style.background = '#ffffff';
-  wrapper.style.zIndex = '-9999';
-  wrapper.innerHTML = buildInvoicePrintableHTML(inv);
-  document.body.appendChild(wrapper);
+  const canvas = renderInvoiceToCanvas(inv);
 
-  const opt = {
-    margin: [6, 6, 6, 6],
-    filename: `فاتورة_مبيعات_${inv.invoiceNumber}.pdf`,
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: {
-      scale: 2,
-      useCORS: true,
-      letterRendering: true,
-      scrollX: 0,
-      scrollY: 0,
-      windowWidth: 794
-    },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-  };
-
-  try {
-    const pdfBlob = await html2pdf().set(opt).from(wrapper).outputPdf('blob');
-    if (wrapper.parentNode) wrapper.parentNode.removeChild(wrapper);
-    return pdfBlob;
-  } catch (err) {
-    if (wrapper.parentNode) wrapper.parentNode.removeChild(wrapper);
-    throw err;
+  if (typeof html2pdf !== 'undefined') {
+    try {
+      const opt = {
+        margin: [6, 6, 6, 6],
+        filename: `فاتورة_مبيعات_${inv.invoiceNumber}.pdf`,
+        image: { type: 'jpeg', quality: 0.96 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+      const blob = await html2pdf().set(opt).from(canvas, 'canvas').outputPdf('blob');
+      if (blob && blob.size > 1000) {
+        return blob;
+      }
+    } catch (e) {
+      console.warn('html2pdf canvas pipeline fallback:', e);
+    }
   }
+
+  return buildDirectPdfFromCanvas(canvas);
 }
 
 async function downloadSalesInvoicePDF(inv) {
@@ -2518,27 +2766,16 @@ async function downloadSalesInvoicePDF(inv) {
 
   showToast("⏳ جاري إنشاء وتنسيق تقرير الفاتورة بصيغة PDF...", "info");
   try {
-    const wrapper = document.createElement('div');
-    wrapper.id = 'tempPdfRenderWrapper';
-    wrapper.style.position = 'fixed';
-    wrapper.style.left = '-9999px';
-    wrapper.style.top = '0';
-    wrapper.style.width = '794px';
-    wrapper.style.background = '#ffffff';
-    wrapper.style.zIndex = '-9999';
-    wrapper.innerHTML = buildInvoicePrintableHTML(inv);
-    document.body.appendChild(wrapper);
-
-    const opt = {
-      margin: [6, 6, 6, 6],
-      filename: `فاتورة_مبيعات_${inv.invoiceNumber}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, letterRendering: true, scrollX: 0, scrollY: 0, windowWidth: 794 },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    };
-
-    await html2pdf().set(opt).from(wrapper).save();
-    if (wrapper.parentNode) wrapper.parentNode.removeChild(wrapper);
+    const pdfBlob = await generateInvoicePDFBlob(inv);
+    const fileName = `فاتورة_مبيعات_${inv.invoiceNumber}.pdf`;
+    const blobUrl = URL.createObjectURL(pdfBlob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
     showToast("✅ تم تنزيل تقرير الفاتورة PDF بنجاح!", "success");
   } catch (err) {
     console.error(err);
@@ -2579,7 +2816,7 @@ async function shareSalesInvoicePDFViaWhatsApp(inv) {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
 
     // 2. Open WhatsApp with pre-filled professional notification:
     const cleanPhone = (inv.customerPhone || '').replace(/^0/, '20');
@@ -2622,6 +2859,9 @@ function printSalesInvoiceA4(inv) {
     return;
   }
 
+  const canvas = renderInvoiceToCanvas(inv);
+  const imgDataUrl = canvas.toDataURL('image/png');
+
   const printWindow = window.open('', '_blank');
   if (!printWindow) {
     showToast("يرجى السماح بالنوافذ المنبثقة لإتمام الطباعة!", "error");
@@ -2633,24 +2873,17 @@ function printSalesInvoiceA4(inv) {
     <head>
       <meta charset="UTF-8">
       <title>فاتورة مبيعات ${inv.invoiceNumber}</title>
-      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
       <style>
-        * { box-sizing: border-box; }
-        body { margin: 0; padding: 20px; background: #fff; font-family: 'Tajawal', sans-serif; direction: rtl; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: #fff; text-align: center; }
+        img { width: 100%; max-width: 210mm; height: auto; display: block; margin: 0 auto; }
         @media print {
-          body { padding: 0; }
-          @page { size: A4 portrait; margin: 8mm; }
+          @page { size: A4 portrait; margin: 5mm; }
         }
       </style>
     </head>
     <body>
-      ${buildInvoicePrintableHTML(inv)}
-      <script>
-        window.onload = function() {
-          window.focus();
-          window.print();
-        };
-      <\/script>
+      <img src="${imgDataUrl}" onload="window.focus(); window.print();" />
     </body>
     </html>
   `);
@@ -2680,24 +2913,25 @@ function previewSalesInvoiceModal(inv) {
         </button>
       </div>
 
-      <div style="max-height:65vh; overflow-y:auto; border:1px solid #e2e8f0; border-radius:10px; background:#fff; padding:6px; box-shadow:inset 0 1px 3px rgba(0,0,0,0.05);">
+      <div style="max-height:65vh; overflow-y:auto; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc; padding:6px;">
         ${buildInvoicePrintableHTML(inv)}
       </div>
     </div>
   `;
-  openAppModal(`معاينة فاتورة مبيعات (${inv.invoiceNumber})`, html);
+  openAppModal(`معاينة فاتورة مبيعات (${inv.invoiceNumber})`, html, true);
 }
 
 function getCurrentSalesDraftInvoice() {
   const invoiceNo = document.getElementById('saleInvoiceNo') ? document.getElementById('saleInvoiceNo').value : (currentSalesInvoiceNo || `SAL-${Date.now() % 100000}`);
-  const custId = parseInt(document.getElementById('saleCustomerSelect') ? document.getElementById('saleCustomerSelect').value : currentSalesCustomerId) || 1;
-  const customer = db.customers.find(c => c.id === custId) || { name: "عميل عام", phone: "", address: "" };
+  const selectEl = document.getElementById('saleCustomerSelect');
+  const custId = (selectEl && selectEl.value) ? Number(selectEl.value) : currentSalesCustomerId;
+  const customer = db.customers.find(c => c.id == custId) || db.customers[0] || { id: 1, name: "عميل عام", phone: "", address: "" };
   const grandTotal = currentSalesItems.reduce((acc, it) => acc + it.lineTotal, 0);
 
   return {
     id: Date.now(),
     invoiceNumber: invoiceNo,
-    customerId: custId,
+    customerId: customer.id,
     customerName: customer.name,
     customerPhone: customer.phone || "",
     customerAddress: customer.address || "",
@@ -2736,57 +2970,38 @@ let lastCompletedSalesInvoice = null;
 function openSalesInvoiceSuccessModal(inv) {
   lastCompletedSalesInvoice = inv;
   const html = `
-    <div style="text-align:center; padding:10px 0;">
-      <div style="width:60px; height:60px; background:#dcfce7; color:#15803d; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:32px; margin:0 auto 12px auto;">
-        ✓
+    <div style="text-align:center; padding:6px 0;">
+      <div style="display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:10px; color:#15803d; font-weight:800; font-size:16px;">
+        <span style="background:#dcfce7; width:32px; height:32px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center;">✓</span>
+        <span>تم حفظ وإصدار فاتورة البيع بنجاح!</span>
       </div>
-      <h3 style="font-weight:800; font-size:18px; color:#0f172a; margin-bottom:6px;">تم حفظ فاتورة البيع بنجاح!</h3>
-      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px; margin-bottom:16px; font-size:13px; text-align:right;">
-        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-          <span style="color:#64748b;">رقم الفاتورة:</span>
-          <b style="color:#0284c7;">#${inv.invoiceNumber}</b>
-        </div>
-        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-          <span style="color:#64748b;">العميل:</span>
-          <b>${inv.customerName}</b>
-        </div>
-        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-          <span style="color:#64748b;">عدد الأصناف:</span>
-          <b>${inv.items.length} صنف</b>
-        </div>
-        <div style="display:flex; justify-content:space-between; font-weight:800; font-size:15px; color:#059669; border-top:1px dashed #cbd5e1; padding-top:6px; margin-top:4px;">
-          <span>صافي الفاتورة:</span>
-          <span>${Number(inv.grandTotal).toFixed(2)} ج.م</span>
-        </div>
+
+      <!-- Live Visual Invoice Report Preview -->
+      <div style="max-height:48vh; overflow-y:auto; border:1.5px solid #cbd5e1; border-radius:10px; background:#f8fafc; padding:6px; margin-bottom:12px;">
+        ${buildInvoicePrintableHTML(inv)}
       </div>
 
       <div style="display:flex; flex-direction:column; gap:8px;">
-        <button class="btn btn-whatsapp" style="font-size:14px;" onclick="shareSalesInvoicePDFViaWhatsApp(lastCompletedSalesInvoice)">
-          📲 إرسال تقرير PDF للعميل عبر واتساب
-        </button>
-        <button class="btn btn-pdf" style="font-size:14px;" onclick="downloadSalesInvoicePDF(lastCompletedSalesInvoice)">
-          📄 تحميل تقرير الفاتورة PDF
-        </button>
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
-          <button class="btn btn-outline" onclick="printSalesInvoiceA4(lastCompletedSalesInvoice)">
-            🖨️ طباعة الفاتورة
+          <button class="btn btn-whatsapp" style="font-size:13px;" onclick="shareSalesInvoicePDFViaWhatsApp(lastCompletedSalesInvoice)">
+            📲 إرسال PDF واتساب
           </button>
-          <button class="btn btn-outline" onclick="previewSalesInvoiceModal(lastCompletedSalesInvoice)">
-            👁️ معاينة التقرير
+          <button class="btn btn-pdf" style="font-size:13px;" onclick="downloadSalesInvoicePDF(lastCompletedSalesInvoice)">
+            📄 تحميل الفاتورة PDF
           </button>
         </div>
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:6px; border-top:1px solid #e2e8f0; padding-top:10px;">
-          <button class="btn btn-primary" onclick="closeAppModal(); navigateTo('sales');">
-            ➕ فاتورة جديدة
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+          <button class="btn btn-outline" onclick="printSalesInvoiceA4(lastCompletedSalesInvoice)">
+            🖨️ طباعة الفاتورة A4
           </button>
-          <button class="btn btn-outline" onclick="closeAppModal(); navigateTo('inventory');">
-            💊 فحص المخزون
+          <button class="btn btn-primary" onclick="closeAppModal(); navigateTo('sales');">
+            ➕ فاتورة بيع جديدة
           </button>
         </div>
       </div>
     </div>
   `;
-  openAppModal("إصدار فاتورة بيع", html);
+  openAppModal(`تقرير فاتورة المبيعات (#${inv.invoiceNumber})`, html, true);
 }
 
 function confirmSalesInvoice() {
@@ -2796,8 +3011,9 @@ function confirmSalesInvoice() {
   }
 
   const invoiceNo = document.getElementById('saleInvoiceNo') ? document.getElementById('saleInvoiceNo').value : (currentSalesInvoiceNo || `SAL-${Date.now() % 100000}`);
-  const custId = parseInt(document.getElementById('saleCustomerSelect') ? document.getElementById('saleCustomerSelect').value : currentSalesCustomerId) || 1;
-  const customer = db.customers.find(c => c.id === custId) || { name: "عميل عام", phone: "", address: "" };
+  const selectEl = document.getElementById('saleCustomerSelect');
+  const custId = (selectEl && selectEl.value) ? Number(selectEl.value) : currentSalesCustomerId;
+  const customer = db.customers.find(c => c.id == custId) || db.customers[0] || { id: 1, name: "عميل عام", phone: "", address: "" };
   const grandTotal = currentSalesItems.reduce((acc, it) => acc + it.lineTotal, 0);
 
   currentSalesItems.forEach(item => {
@@ -2828,7 +3044,7 @@ function confirmSalesInvoice() {
   const savedInvoice = {
     id: Date.now(),
     invoiceNumber: invoiceNo,
-    customerId: custId,
+    customerId: customer.id,
     customerName: customer.name,
     customerPhone: customer.phone || "",
     customerAddress: customer.address || "",
@@ -2842,6 +3058,7 @@ function confirmSalesInvoice() {
   saveDB();
   currentSalesItems = [];
   currentSalesInvoiceNo = `SAL-${Math.floor(10000 + Math.random() * 90000)}`;
+  calculateAndRenderSalesUI();
 
   showToast("تم إصدار وحفظ فاتورة البيع وخصم المخزون بنجاح!", "success");
   openSalesInvoiceSuccessModal(savedInvoice);
