@@ -1,4 +1,4 @@
-﻿@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap');
 
 :root {
   --primary: #0284c7;
@@ -321,6 +321,8 @@ body {
 .btn-success:hover { background: #047857; }
 .btn-whatsapp { background: var(--whatsapp); color: #fff; font-weight: 800; }
 .btn-whatsapp:hover { background: var(--whatsapp-dark); }
+.btn-pdf { background: #0284c7; color: #fff; font-weight: 800; }
+.btn-pdf:hover { background: #0369a1; }
 .btn-danger { background: var(--danger); color: #fff; }
 .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-main); }
 .btn-outline:hover { background: #f1f5f9; }

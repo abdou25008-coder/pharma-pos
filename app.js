@@ -752,11 +752,23 @@ function renderHomeScreen() {
 
 
 // -------------------------------------------------------------
+// -------------------------------------------------------------
 // 2. PURCHASE SCREEN (Pharma Pricing & Fixed Price + Discount)
 // -------------------------------------------------------------
+let currentPurchaseInvoiceNo = "";
+let currentPurchaseSupplier = "";
+let selectedPurchaseProduct = null;
+
 function renderPurchaseScreen() {
   topBarTitle.innerText = "فاتورة شراء أدوية جديدة";
   topBarSubtitle.innerText = "سعر الجمهور ثابت وقيمة الخصم هي المتغيرة";
+
+  if (!currentPurchaseInvoiceNo) {
+    currentPurchaseInvoiceNo = `PUR-${Math.floor(10000 + Math.random() * 90000)}`;
+  }
+  if (!currentPurchaseSupplier && db.suppliers && db.suppliers.length > 0) {
+    currentPurchaseSupplier = db.suppliers[0].name;
+  }
 
   calculateAndRenderPurchaseUI();
 }
@@ -799,15 +811,88 @@ function calculateAndRenderPurchaseUI() {
       <div class="row-2">
         <div class="form-group">
           <label>رقم فاتورة الشراء</label>
-          <input class="input" id="purInvoiceNo" value="PUR-${Math.floor(10000 + Math.random() * 90000)}" />
+          <input class="input" id="purInvoiceNo" value="${currentPurchaseInvoiceNo}" oninput="currentPurchaseInvoiceNo = this.value" />
         </div>
         <div class="form-group">
           <label>المورد / شركة التوزيع</label>
-          <select class="input" id="purSupplierName">
-            ${db.suppliers.map(s => `<option value="${s.name}">${s.name}</option>`).join('')}
+          <select class="input" id="purSupplierName" onchange="currentPurchaseSupplier = this.value">
+            ${db.suppliers.map(s => `<option value="${s.name}" ${s.name === currentPurchaseSupplier ? 'selected' : ''}>${s.name}</option>`).join('')}
           </select>
         </div>
       </div>
+    </div>
+
+    <!-- Quick Medicine Picker From Registered Products -->
+    <div class="card" style="border:1.5px solid #0284c7; background:#f0f9ff;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+        <span style="font-weight:800; font-size:13px; color:#0369a1;">
+          💊 اختيار من الأدوية المسجلة مسبقاً بالمخزن
+        </span>
+        <button class="btn btn-outline btn-small" style="font-size:11px;" onclick="openAddMedicineModal()">
+          ➕ تسجيل دواء جديد غير مسجل
+        </button>
+      </div>
+
+      <div class="form-group">
+        <label style="font-size:12px; font-weight:700;">اختر الدواء من المخزون الحالي (${db.products.length} صنف):</label>
+        <select class="input" id="purchaseMedicinePicker" onchange="onPurchaseMedicineSelected(this.value)">
+          <option value="">-- اضغط لاختيار الصنف من المخزن --</option>
+          ${db.products.map(p => `
+            <option value="${p.id}" ${selectedPurchaseProduct && selectedPurchaseProduct.id === p.id ? 'selected' : ''}>
+              ${p.name} (الرصيد: ${p.stockQuantity} علبة | سعر الجمهور: ${p.officialPrice} ج.م | الخصم: ${p.purchaseDiscountRate}%)
+            </option>
+          `).join('')}
+        </select>
+      </div>
+
+      ${selectedPurchaseProduct ? `
+        <div style="background:#fff; border:1px solid var(--border); border-radius:12px; padding:12px; margin-top:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+            <div>
+              <span style="font-weight:800; font-size:14px; color:#0f172a;">${selectedPurchaseProduct.name}</span>
+              <span class="badge badge-blue" style="margin-right:6px;">صنف مسجل بالمخزن</span>
+            </div>
+            <span class="badge ${selectedPurchaseProduct.stockQuantity <= 5 ? 'badge-red' : 'badge-green'}">
+              الرصيد الحالي بالمخزن: ${selectedPurchaseProduct.stockQuantity} علبة
+            </span>
+          </div>
+
+          <div class="row-2">
+            <div class="form-group">
+              <label>سعر الجمهور الرسمي (ج.م)</label>
+              <input class="input" type="number" step="0.5" id="purMedOfficialPrice" value="${selectedPurchaseProduct.officialPrice}" oninput="recalcPurchaseLineTotal()" />
+            </div>
+            <div class="form-group">
+              <label>الكمية المشتراة بالفاتورة (علب) *</label>
+              <input class="input" type="number" id="purMedQuantity" value="10" min="1" oninput="recalcPurchaseLineTotal()" />
+            </div>
+          </div>
+
+          <div class="row-2">
+            <div class="form-group">
+              <label>خصم الشراء من المورد %</label>
+              <input class="input" type="number" step="0.5" id="purMedPurchaseDiscount" value="${selectedPurchaseProduct.purchaseDiscountRate}" oninput="recalcPurchaseLineTotal()" />
+            </div>
+            <div class="form-group">
+              <label>خصم البيع المقترح للعميل %</label>
+              <input class="input" type="number" step="0.5" id="purMedSaleDiscount" value="${selectedPurchaseProduct.saleDiscountRate}" />
+            </div>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:8px 12px; margin-top:8px;">
+            <div style="font-size:12px; color:#166534;">
+              صافي تكلفة العلبة: <b id="purLiveNetUnit">${(selectedPurchaseProduct.officialPrice * (1 - (selectedPurchaseProduct.purchaseDiscountRate / 100))).toFixed(2)} ج.م</b>
+            </div>
+            <div style="font-size:13px; font-weight:800; color:#15803d;">
+              إجمالي الصنف: <span id="purLiveLineTotal">${(10 * selectedPurchaseProduct.officialPrice * (1 - (selectedPurchaseProduct.purchaseDiscountRate / 100))).toFixed(2)} ج.م</span>
+            </div>
+          </div>
+
+          <button class="btn btn-primary" style="margin-top:10px; font-size:13px;" onclick="addSelectedProductToPurchaseInvoice()">
+            ➕ إضافة هذا الصنف لفاتورة الشراء
+          </button>
+        </div>
+      ` : ''}
     </div>
 
     <!-- Parsed Medicine Items -->
@@ -1280,40 +1365,250 @@ function removePurchaseItem(idx) {
   showToast("تم مسح الصنف من الفاتورة!");
 }
 
+// =============================================================
+// PURCHASE MEDICINE PICKER & MODAL (الأصناف المسجلة وإلغاء التكرار)
+// =============================================================
+
+function onPurchaseMedicineSelected(productId) {
+  if (!productId) {
+    selectedPurchaseProduct = null;
+  } else {
+    selectedPurchaseProduct = db.products.find(p => p.id == productId) || null;
+  }
+  calculateAndRenderPurchaseUI();
+}
+
+function recalcPurchaseLineTotal() {
+  if (!selectedPurchaseProduct) return;
+  const officialPrice = parseFloat(document.getElementById('purMedOfficialPrice').value) || 0;
+  const qty = parseFloat(document.getElementById('purMedQuantity').value) || 0;
+  const pDisc = parseFloat(document.getElementById('purMedPurchaseDiscount').value) || 0;
+
+  const netUnitPrice = officialPrice * (1 - (pDisc / 100));
+  const lineTotal = qty * netUnitPrice;
+
+  const netEl = document.getElementById('purLiveNetUnit');
+  const lineEl = document.getElementById('purLiveLineTotal');
+  if (netEl) netEl.innerText = `${netUnitPrice.toFixed(2)} ج.م`;
+  if (lineEl) lineEl.innerText = `${lineTotal.toFixed(2)} ج.م`;
+}
+
+function addSelectedProductToPurchaseInvoice() {
+  if (!selectedPurchaseProduct) {
+    showToast("يرجى اختيار دواء من القائمة أولاً!", "error");
+    return;
+  }
+
+  const officialPrice = parseFloat(document.getElementById('purMedOfficialPrice').value) || selectedPurchaseProduct.officialPrice;
+  const qty = parseFloat(document.getElementById('purMedQuantity').value) || 1;
+  const pDisc = parseFloat(document.getElementById('purMedPurchaseDiscount').value) || selectedPurchaseProduct.purchaseDiscountRate;
+  const sDisc = parseFloat(document.getElementById('purMedSaleDiscount').value) || selectedPurchaseProduct.saleDiscountRate;
+
+  if (qty <= 0) {
+    showToast("يرجى إدخال كمية صحيحة أكبر من الصفر!", "error");
+    return;
+  }
+
+  const existingIdx = parsedPurchaseItems.findIndex(p => 
+    (p.productId && p.productId === selectedPurchaseProduct.id) || 
+    p.productName.trim().toLowerCase() === selectedPurchaseProduct.name.trim().toLowerCase()
+  );
+
+  if (existingIdx >= 0) {
+    parsedPurchaseItems[existingIdx].quantity += qty;
+    parsedPurchaseItems[existingIdx].officialPrice = officialPrice;
+    parsedPurchaseItems[existingIdx].purchaseDiscountRate = pDisc;
+    parsedPurchaseItems[existingIdx].saleDiscountRate = sDisc;
+    parsedPurchaseItems[existingIdx].productId = selectedPurchaseProduct.id;
+    showToast(`تم زيادة كمية (${selectedPurchaseProduct.name}) بالفاتورة إلى ${parsedPurchaseItems[existingIdx].quantity} علبة!`);
+  } else {
+    parsedPurchaseItems.push({
+      productId: selectedPurchaseProduct.id,
+      productName: selectedPurchaseProduct.name,
+      quantity: qty,
+      officialPrice: officialPrice,
+      purchaseDiscountRate: pDisc,
+      saleDiscountRate: sDisc
+    });
+    showToast(`تمت إضافة (${selectedPurchaseProduct.name}) للفاتورة بنجاح!`);
+  }
+
+  selectedPurchaseProduct = null;
+  calculateAndRenderPurchaseUI();
+}
+
+let addMedModalMode = "existing"; // "existing" or "new"
+let addMedModalSelectedProductId = null;
+let addMedModalSearchQuery = "";
+
 function openAddMedicineModal() {
-  const formHtml = `
-    <form onsubmit="handleAddMedicineSubmit(event)">
-      <div class="form-group">
-        <label>اسم الدواء / الصنف *</label>
-        <input class="input" id="newMedName" placeholder="مثال: ألفينترن 30 قرص" required />
+  addMedModalMode = "existing";
+  addMedModalSelectedProductId = null;
+  addMedModalSearchQuery = "";
+  renderAddMedicineModalContent();
+}
+
+function setAddMedModalMode(mode) {
+  addMedModalMode = mode;
+  if (mode === "new") {
+    addMedModalSelectedProductId = null;
+  }
+  renderAddMedicineModalContent();
+}
+
+function filterModalRegisteredMeds(query) {
+  addMedModalSearchQuery = query;
+  const listEl = document.getElementById('modalProductsListContainer');
+  if (!listEl) return;
+  listEl.innerHTML = buildModalProductsListHTML();
+}
+
+function buildModalProductsListHTML() {
+  const filtered = addMedModalSearchQuery
+    ? db.products.filter(p => p.name.toLowerCase().includes(addMedModalSearchQuery.trim().toLowerCase()))
+    : db.products;
+
+  if (filtered.length === 0) {
+    return `
+      <div style="text-align:center; padding:16px; color:var(--text-muted); font-size:12px;">
+        لم يتم العثور على أدوية مطابقة. يمكنك التبديل إلى زر <b>«دواء جديد غير مسجل»</b> لإضافته.
+      </div>
+    `;
+  }
+
+  return filtered.map(p => {
+    const isSelected = addMedModalSelectedProductId === p.id;
+    return `
+      <div onclick="selectModalProduct(${p.id})" style="
+        padding:8px 10px;
+        border-radius:8px;
+        border:1.5px solid ${isSelected ? '#0284c7' : 'var(--border)'};
+        background:${isSelected ? '#f0f9ff' : '#ffffff'};
+        cursor:pointer;
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        transition:all 0.15s;
+        margin-bottom:6px;
+      ">
+        <div>
+          <div style="font-weight:700; font-size:13px; color:#0f172a;">${p.name}</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">
+            سعر الجمهور: <b>${p.officialPrice} ج.م</b> | خصم الشراء السابق: <b>${p.purchaseDiscountRate}%</b>
+          </div>
+        </div>
+        <div style="text-align:left;">
+          <span class="badge ${p.stockQuantity <= 5 ? 'badge-red' : 'badge-green'}" style="font-size:11px;">
+            الرصيد: ${p.stockQuantity} علبة
+          </span>
+          ${isSelected ? `<span style="color:#0284c7; font-weight:800; font-size:12px; display:block; margin-top:2px;">✓ تم الاختيار</span>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function selectModalProduct(productId) {
+  addMedModalSelectedProductId = productId;
+  const p = db.products.find(x => x.id === productId);
+  if (!p) return;
+
+  const listEl = document.getElementById('modalProductsListContainer');
+  if (listEl) listEl.innerHTML = buildModalProductsListHTML();
+
+  const nameInput = document.getElementById('newMedName');
+  const priceInput = document.getElementById('newMedOfficialPrice');
+  const pDiscInput = document.getElementById('newMedPurchaseDisc');
+  const sDiscInput = document.getElementById('newMedSaleDisc');
+  const qtyInput = document.getElementById('newMedQty');
+  const badgeEl = document.getElementById('modalSelectedProductBadge');
+
+  if (nameInput) nameInput.value = p.name;
+  if (priceInput) priceInput.value = p.officialPrice;
+  if (pDiscInput) pDiscInput.value = p.purchaseDiscountRate;
+  if (sDiscInput) sDiscInput.value = p.saleDiscountRate;
+  if (badgeEl) {
+    badgeEl.style.display = 'block';
+    badgeEl.innerHTML = `✓ تم اختيار: <b>${p.name}</b> (الرصيد الحالي بالمخزن: ${p.stockQuantity} علبة)`;
+  }
+  if (qtyInput) qtyInput.focus();
+}
+
+function renderAddMedicineModalContent() {
+  const isExisting = addMedModalMode === "existing";
+  const selectedProd = addMedModalSelectedProductId ? db.products.find(p => p.id === addMedModalSelectedProductId) : null;
+
+  const html = `
+    <div>
+      <!-- Mode Toggle Buttons -->
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; background:#f1f5f9; padding:4px; border-radius:10px; margin-bottom:12px;">
+        <button type="button" class="btn ${isExisting ? 'btn-primary' : 'btn-outline'}" style="font-size:12px; padding:8px 6px;" onclick="setAddMedModalMode('existing')">
+          💊 من الأدوية المسجلة (${db.products.length})
+        </button>
+        <button type="button" class="btn ${!isExisting ? 'btn-primary' : 'btn-outline'}" style="font-size:12px; padding:8px 6px;" onclick="setAddMedModalMode('new')">
+          ➕ دواء جديد غير مسجل
+        </button>
       </div>
 
-      <div class="row-2">
-        <div class="form-group">
-          <label>سعر الجمهور الرسمي (ثابت) *</label>
-          <input class="input" type="number" step="0.5" id="newMedOfficialPrice" placeholder="مثال: 54.0" required />
+      ${isExisting ? `
+        <!-- Search and Selection of Existing Products -->
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px; font-weight:700; color:#0369a1; display:block; margin-bottom:4px;">
+            🔍 ابحث في قائمة الأدوية المسجلة مسبقاً بالمخزن:
+          </label>
+          <input class="input" id="searchRegisteredMedsInput" placeholder="اكتب للبحث الفوري بالاسم..." value="${escapeHtml(addMedModalSearchQuery)}" oninput="filterModalRegisteredMeds(this.value)" style="margin-bottom:8px; border-color:#38bdf8;" />
+          
+          <div id="modalProductsListContainer" style="max-height:160px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:6px; background:#f8fafc;">
+            ${buildModalProductsListHTML()}
+          </div>
         </div>
-        <div class="form-group">
-          <label>الكمية المشتراة (علب) *</label>
-          <input class="input" type="number" id="newMedQty" value="10" required />
-        </div>
-      </div>
 
-      <div class="row-2">
-        <div class="form-group">
-          <label>خصم الشراء من المورد % *</label>
-          <input class="input" type="number" step="0.5" id="newMedPurchaseDisc" value="25" required />
+        <div id="modalSelectedProductBadge" style="display:${selectedProd ? 'block' : 'none'}; background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; padding:8px 12px; border-radius:8px; font-size:12px; margin-bottom:10px;">
+          ${selectedProd ? `✓ تم اختيار: <b>${selectedProd.name}</b> (الرصيد الحالي بالمخزن: ${selectedProd.stockQuantity} علبة)` : ''}
         </div>
-        <div class="form-group">
-          <label>خصم البيع للعميل % *</label>
-          <input class="input" type="number" step="0.5" id="newMedSaleDisc" value="20" required />
+      ` : `
+        <div style="background:#fef3c7; border:1px solid #fde68a; border-radius:8px; padding:8px 12px; margin-bottom:12px; font-size:12px; color:#92400e;">
+          ℹ️ <b>دواء جديد:</b> سيتم إنشاء بطاقة صنف جديدة لهذا الدواء في المخزن عند حفظ الفاتورة.
         </div>
-      </div>
+      `}
 
-      <button type="submit" class="btn btn-primary" style="margin-top:10px;">إضافة الدواء للفاتورة</button>
-    </form>
+      <!-- Form Inputs -->
+      <form onsubmit="handleAddMedicineSubmit(event)">
+        <div class="form-group">
+          <label>اسم الدواء / الصنف *</label>
+          <input class="input" id="newMedName" value="${selectedProd ? selectedProd.name : ''}" placeholder="مثال: ألفينترن 30 قرص" ${isExisting ? 'readonly style="background:#f1f5f9; font-weight:800;"' : 'required'} />
+        </div>
+
+        <div class="row-2">
+          <div class="form-group">
+            <label>سعر الجمهور الرسمي (ثابت) *</label>
+            <input class="input" type="number" step="0.5" id="newMedOfficialPrice" value="${selectedProd ? selectedProd.officialPrice : ''}" placeholder="مثال: 54.0" required />
+          </div>
+          <div class="form-group">
+            <label>الكمية المشتراة (علب) *</label>
+            <input class="input" type="number" id="newMedQty" value="10" min="1" required />
+          </div>
+        </div>
+
+        <div class="row-2">
+          <div class="form-group">
+            <label>خصم الشراء من المورد % *</label>
+            <input class="input" type="number" step="0.5" id="newMedPurchaseDisc" value="${selectedProd ? selectedProd.purchaseDiscountRate : '25'}" required />
+          </div>
+          <div class="form-group">
+            <label>خصم البيع المقترح للعميل % *</label>
+            <input class="input" type="number" step="0.5" id="newMedSaleDisc" value="${selectedProd ? selectedProd.saleDiscountRate : '20'}" required />
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="margin-top:10px;">
+          ➕ إضافة الدواء لفاتورة الشراء
+        </button>
+      </form>
+    </div>
   `;
-  openAppModal("تسجيل صنف دواء في الفاتورة", formHtml);
+
+  openAppModal("تسجيل صنف دواء في الفاتورة", html);
 }
 
 function handleAddMedicineSubmit(e) {
@@ -1324,17 +1619,48 @@ function handleAddMedicineSubmit(e) {
   const pDisc = parseFloat(document.getElementById('newMedPurchaseDisc').value) || 0;
   const sDisc = parseFloat(document.getElementById('newMedSaleDisc').value) || 0;
 
-  parsedPurchaseItems.push({
-    productName: name,
-    quantity: qty,
-    officialPrice: officialPrice,
-    purchaseDiscountRate: pDisc,
-    saleDiscountRate: sDisc
-  });
+  if (!name) {
+    showToast("يرجى اختيار دواء أو إدخال اسم الدواء!", "error");
+    return;
+  }
+
+  let pId = null;
+  if (addMedModalMode === "existing" && addMedModalSelectedProductId) {
+    pId = addMedModalSelectedProductId;
+  } else {
+    // Check if name matches any existing product in db.products
+    const match = db.products.find(p => p.name.trim().toLowerCase() === name.toLowerCase());
+    if (match) {
+      pId = match.id;
+    }
+  }
+
+  const existingIdx = parsedPurchaseItems.findIndex(p => 
+    (pId && p.productId === pId) || 
+    p.productName.trim().toLowerCase() === name.toLowerCase()
+  );
+
+  if (existingIdx >= 0) {
+    parsedPurchaseItems[existingIdx].quantity += qty;
+    parsedPurchaseItems[existingIdx].officialPrice = officialPrice;
+    parsedPurchaseItems[existingIdx].purchaseDiscountRate = pDisc;
+    parsedPurchaseItems[existingIdx].saleDiscountRate = sDisc;
+    if (pId) parsedPurchaseItems[existingIdx].productId = pId;
+    showToast(`تم تحديث كمية (${name}) بالفاتورة إلى ${parsedPurchaseItems[existingIdx].quantity} علبة!`);
+  } else {
+    parsedPurchaseItems.push({
+      productId: pId,
+      productName: name,
+      quantity: qty,
+      officialPrice: officialPrice,
+      purchaseDiscountRate: pDisc,
+      saleDiscountRate: sDisc
+    });
+    showToast(`تمت إضافة (${name}) للفاتورة بنجاح!`);
+  }
 
   closeAppModal();
   calculateAndRenderPurchaseUI();
-  showToast("تمت إضافة الدواء بنجاح!");
 }
 
 function savePurchaseInvoice() {
@@ -1343,21 +1669,22 @@ function savePurchaseInvoice() {
     return;
   }
 
-  const invoiceNo = document.getElementById('purInvoiceNo').value || `PUR-${Date.now() % 100000}`;
-  const supplier = document.getElementById('purSupplierName').value || "شركة توزيع أدوية";
+  const invoiceNo = document.getElementById('purInvoiceNo') ? document.getElementById('purInvoiceNo').value : (currentPurchaseInvoiceNo || `PUR-${Date.now() % 100000}`);
+  const supplier = document.getElementById('purSupplierName') ? document.getElementById('purSupplierName').value : (currentPurchaseSupplier || "شركة توزيع أدوية");
 
   const totalBefore = parsedPurchaseItems.reduce((acc, item) => acc + (item.quantity * item.officialPrice), 0);
   const totalDisc = parsedPurchaseItems.reduce((acc, item) => acc + ((item.quantity * item.officialPrice) * (item.purchaseDiscountRate / 100)), 0);
   const netGrandTotal = totalBefore - totalDisc;
 
   parsedPurchaseItems.forEach(item => {
-    let existing = db.products.find(p => p.name.trim().toLowerCase() === item.productName.trim().toLowerCase());
+    let existing = (item.productId && db.products.find(p => p.id === item.productId)) ||
+                   db.products.find(p => p.name.trim().toLowerCase() === item.productName.trim().toLowerCase());
     let prevStock = 0;
     let newStock = item.quantity;
-    let pId = Date.now() + Math.floor(Math.random() * 1000);
+    let pId = item.productId || (Date.now() + Math.floor(Math.random() * 1000));
 
     if (existing) {
-      prevStock = existing.stockQuantity;
+      prevStock = existing.stockQuantity || 0;
       newStock = prevStock + item.quantity;
       pId = existing.id;
 
@@ -1365,7 +1692,7 @@ function savePurchaseInvoice() {
         db.discountAlerts.unshift({
           id: Date.now() + Math.floor(Math.random() * 1000),
           productId: pId,
-          productName: item.productName,
+          productName: existing.name,
           oldDiscount: existing.purchaseDiscountRate,
           newDiscount: item.purchaseDiscountRate,
           diff: item.purchaseDiscountRate - existing.purchaseDiscountRate,
@@ -1397,7 +1724,7 @@ function savePurchaseInvoice() {
     db.movements.push({
       id: Date.now() + Math.floor(Math.random() * 1000),
       productId: pId,
-      productName: item.productName,
+      productName: existing ? existing.name : item.productName,
       movementType: "PURCHASE_IN",
       quantity: item.quantity,
       previousStock: prevStock,
@@ -1421,6 +1748,9 @@ function savePurchaseInvoice() {
 
   saveDB();
   parsedPurchaseItems = [];
+  currentPurchaseInvoiceNo = "";
+  currentPurchaseSupplier = "";
+  selectedPurchaseProduct = null;
   showToast("تم حفظ فاتورة الشراء وتحديث أرصدة الأدوية بنجاح!");
   navigateTo('inventory');
 }
@@ -1697,13 +2027,19 @@ function renderDiscountAlertsScreen() {
 }
 
 // -------------------------------------------------------------
-// 4. SALES INVOICE SCREEN (العملاء وواتساب)
+// 4. SALES INVOICE SCREEN (العملاء وواتساب والـ PDF)
 // -------------------------------------------------------------
 let selectedSalesProduct = null;
+let currentSalesInvoiceNo = "";
+let currentSalesCustomerId = 1;
 
 function renderSalesScreen() {
   topBarTitle.innerText = "إصدار فاتورة بيع أدوية";
   topBarSubtitle.innerText = "سعر الجمهور ثابت وخصم البيع يحدد السعر الصافي";
+
+  if (!currentSalesInvoiceNo) {
+    currentSalesInvoiceNo = `SAL-${Math.floor(10000 + Math.random() * 90000)}`;
+  }
 
   calculateAndRenderSalesUI();
 }
@@ -1719,13 +2055,13 @@ function calculateAndRenderSalesUI() {
       <div class="row-2">
         <div class="form-group">
           <label>رقم الفاتورة</label>
-          <input class="input" id="saleInvoiceNo" value="SAL-${Math.floor(10000 + Math.random() * 90000)}" readonly />
+          <input class="input" id="saleInvoiceNo" value="${currentSalesInvoiceNo}" readonly />
         </div>
         <div class="form-group">
           <label>العميل</label>
           <div style="display:flex; gap:6px;">
-            <select class="input" id="saleCustomerSelect">
-              ${db.customers.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+            <select class="input" id="saleCustomerSelect" onchange="currentSalesCustomerId = parseInt(this.value);">
+              ${db.customers.map(c => `<option value="${c.id}" ${c.id === currentSalesCustomerId ? 'selected' : ''}>${c.name}</option>`).join('')}
             </select>
             <button class="btn btn-outline btn-small" title="إضافة عميل" onclick="openAddCustomerModal()">+</button>
           </div>
@@ -1839,15 +2175,25 @@ function calculateAndRenderSalesUI() {
       ` : ''}
     </div>
 
-    <!-- WhatsApp Share and Confirm Buttons -->
-    <div style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
-      <button class="btn btn-whatsapp" onclick="shareCurrentInvoiceViaWhatsApp()" ${currentSalesItems.length === 0 ? 'disabled style="opacity:0.5;"' : ''}>
-        📲 إرسال الفاتورة للعميل عبر واتساب (WhatsApp)
-      </button>
+    <!-- Sales Invoice Actions (PDF & WhatsApp & Confirm) -->
+    <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+        <button class="btn btn-pdf" onclick="downloadCurrentSalesDraftPDF()" ${currentSalesItems.length === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''} title="تحميل فاتورة PDF منسقة للعميل">
+          📄 تحميل فاتورة PDF
+        </button>
+        <button class="btn btn-whatsapp" onclick="shareCurrentSalesDraftPDFToWhatsApp()" ${currentSalesItems.length === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''} title="إرسال ملف PDF عبر واتساب">
+          📲 إرسال PDF عبر واتساب
+        </button>
+      </div>
 
-      <button class="btn btn-success" style="height:50px; font-size:15px;" onclick="confirmSalesInvoice()" ${currentSalesItems.length === 0 ? 'disabled style="opacity:0.5;"' : ''}>
-        ✅ تأكيد الفاتورة وخصم المخزون
-      </button>
+      <div style="display:grid; grid-template-columns: 1fr 2fr; gap:8px;">
+        <button class="btn btn-outline" onclick="previewCurrentSalesDraftModal()" ${currentSalesItems.length === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''} title="معاينة وطباعة الفاتورة">
+          👁️ معاينة وطباعة
+        </button>
+        <button class="btn btn-success" style="font-size:15px; height:48px;" onclick="confirmSalesInvoice()" ${currentSalesItems.length === 0 ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>
+          ✅ تأكيد الفاتورة وخصم المخزون
+        </button>
+      </div>
     </div>
   `;
 }
@@ -1951,22 +2297,496 @@ function shareCurrentInvoiceViaWhatsApp() {
     return;
   }
 
-  const invoiceNo = document.getElementById('saleInvoiceNo').value || `SAL-${Date.now() % 100000}`;
-  const custId = parseInt(document.getElementById('saleCustomerSelect').value) || 1;
-  const customer = db.customers.find(c => c.id === custId) || { name: "عميل عام", phone: "" };
-  const grandTotal = currentSalesItems.reduce((acc, it) => acc + it.lineTotal, 0);
+  shareCurrentSalesDraftPDFToWhatsApp();
+}
 
-  const text = generateWhatsAppText(invoiceNo, customer.name, currentSalesItems, grandTotal);
-  const encodedText = encodeURIComponent(text);
+// =============================================================
+// PDF INVOICE REPORTING & WHATSAPP SHARING
+// =============================================================
 
-  let whatsappUrl = `https://wa.me/?text=${encodedText}`;
-  if (customer.phone && customer.phone.length >= 10) {
-    const cleanPhone = customer.phone.replace(/^0/, '20');
-    whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodedText}`;
+function formatInvoiceDate(timestamp) {
+  try {
+    const d = new Date(timestamp || Date.now());
+    return d.toLocaleString('ar-EG', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  } catch (e) {
+    return new Date().toLocaleDateString('ar-EG');
+  }
+}
+
+function buildInvoicePrintableHTML(inv) {
+  const items = inv.items || [];
+  const subtotalOfficial = items.reduce((acc, it) => acc + ((Number(it.quantity) || 0) * (Number(it.officialPrice) || 0)), 0);
+  const grandTotal = Number(inv.grandTotal) || items.reduce((acc, it) => acc + (Number(it.lineTotal) || 0), 0);
+  const totalDiscAmount = Math.max(0, subtotalOfficial - grandTotal);
+  const totalUnits = items.reduce((acc, it) => acc + (Number(it.quantity) || 0), 0);
+
+  return `
+    <div id="invoiceReportA4Container" style="
+      width: 760px;
+      margin: 0 auto;
+      padding: 24px 28px;
+      background: #ffffff;
+      color: #0f172a;
+      direction: rtl;
+      font-family: 'Tajawal', -apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, Arial, sans-serif;
+      box-sizing: border-box;
+      line-height: 1.4;
+    ">
+      <!-- Header -->
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #0284c7; padding-bottom:14px; margin-bottom:16px;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div style="width:48px; height:48px; background:#e0f2fe; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:26px; border:1px solid #bae6fd;">
+            💊
+          </div>
+          <div>
+            <h1 style="font-size:20px; font-weight:800; color:#0369a1; margin:0 0 4px 0; line-height:1.2;">مدير مبيعات الأدويه</h1>
+            <p style="font-size:11px; color:#64748b; margin:0; font-weight:500;">منظومة توزيع الأدوية والمخزون الصيدلي الذكية</p>
+          </div>
+        </div>
+
+        <div style="text-align:left;">
+          <div style="display:inline-block; background:#0284c7; color:#ffffff; padding:4px 14px; border-radius:6px; font-weight:800; font-size:13px; letter-spacing:0.5px;">
+            فاتورة بيع رسمية
+          </div>
+          <div style="font-size:14px; font-weight:800; color:#0f172a; margin-top:6px;">
+            رقم الفاتورة: <span style="color:#0284c7; direction:ltr; display:inline-block; font-family:monospace;">#${inv.invoiceNumber}</span>
+          </div>
+          <div style="font-size:11px; color:#64748b; margin-top:2px;">
+            📅 ${formatInvoiceDate(inv.date)}
+          </div>
+        </div>
+      </div>
+
+      <!-- Customer & Meta Box -->
+      <div style="display:grid; grid-template-columns: 1.2fr 0.8fr; gap:14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px 16px; margin-bottom:16px; font-size:12px;">
+        <div>
+          <div style="color:#64748b; font-size:11px; font-weight:700; margin-bottom:4px;">بيانات العميل / الصيدلية المستلمة:</div>
+          <div style="font-weight:800; font-size:15px; color:#0f172a; margin-bottom:2px;">
+            👤 ${inv.customerName || 'عميل نقدي عام'}
+          </div>
+          ${inv.customerPhone ? `
+            <div style="color:#475569; font-size:11px; margin-top:3px;">
+              📞 رقم الهاتف: <span style="direction:ltr; display:inline-block; font-weight:700;">${inv.customerPhone}</span>
+            </div>
+          ` : ''}
+          ${inv.customerAddress ? `
+            <div style="color:#475569; font-size:11px; margin-top:2px;">
+              📍 العنوان: ${inv.customerAddress}
+            </div>
+          ` : ''}
+        </div>
+
+        <div style="text-align:left; border-right:1px solid #e2e8f0; padding-right:14px;">
+          <div style="color:#64748b; font-size:11px; font-weight:700; margin-bottom:4px;">حالة الفاتورة والبنود:</div>
+          <div style="display:inline-block; background:#dcfce7; color:#15803d; font-weight:800; font-size:11px; padding:2px 8px; border-radius:4px; margin-bottom:4px;">
+            ✓ معتمدة ومسددة (نقداً)
+          </div>
+          <div style="color:#475569; font-size:11px; margin-top:2px;">
+            عدد الأصناف: <b>${items.length}</b> صنف
+          </div>
+          <div style="color:#475569; font-size:11px; margin-top:2px;">
+            إجمالي عدد العلب: <b>${totalUnits}</b> علبة
+          </div>
+        </div>
+      </div>
+
+      <!-- Items Table -->
+      <table style="width:100%; border-collapse:collapse; margin-bottom:16px; font-size:12px;">
+        <thead>
+          <tr style="background:#0284c7; color:#ffffff; font-weight:800;">
+            <th style="padding:8px 6px; text-align:center; border:1px solid #0284c7; width:34px;">م</th>
+            <th style="padding:8px 10px; text-align:right; border:1px solid #0284c7;">اسم الصنف / الدواء</th>
+            <th style="padding:8px 8px; text-align:center; border:1px solid #0284c7; width:65px;">الكمية</th>
+            <th style="padding:8px 8px; text-align:center; border:1px solid #0284c7; width:80px;">سعر الجمهور</th>
+            <th style="padding:8px 8px; text-align:center; border:1px solid #0284c7; width:65px;">الخصم %</th>
+            <th style="padding:8px 8px; text-align:center; border:1px solid #0284c7; width:80px;">صافي العلبة</th>
+            <th style="padding:8px 10px; text-align:left; border:1px solid #0284c7; width:95px;">الإجمالي</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((it, idx) => `
+            <tr style="background:${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+              <td style="padding:7px 6px; text-align:center; border:1px solid #e2e8f0; font-weight:700; color:#64748b;">${idx + 1}</td>
+              <td style="padding:7px 10px; text-align:right; border:1px solid #e2e8f0; font-weight:700; color:#0f172a;">${it.productName}</td>
+              <td style="padding:7px 8px; text-align:center; border:1px solid #e2e8f0; font-weight:800; color:#0f172a;">${it.quantity} علبة</td>
+              <td style="padding:7px 8px; text-align:center; border:1px solid #e2e8f0; color:#475569;">${Number(it.officialPrice).toFixed(2)} ج.م</td>
+              <td style="padding:7px 8px; text-align:center; border:1px solid #e2e8f0; color:#b45309; font-weight:800;">${Number(it.saleDiscountRate).toFixed(1)}%</td>
+              <td style="padding:7px 8px; text-align:center; border:1px solid #e2e8f0; font-weight:700; color:#0369a1;">${Number(it.netUnitPrice).toFixed(2)} ج.م</td>
+              <td style="padding:7px 10px; text-align:left; border:1px solid #e2e8f0; font-weight:800; color:#059669;">${Number(it.lineTotal).toFixed(2)} ج.م</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+
+      <!-- Financial Totals Summary -->
+      <div style="display:flex; justify-content:flex-end; margin-bottom:18px;">
+        <div style="width:330px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px 16px; font-size:12px; box-sizing:border-box;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:6px; color:#475569;">
+            <span>إجمالي سعر الجمهور الرسمي:</span>
+            <span style="font-weight:700;">${subtotalOfficial.toFixed(2)} ج.م</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:8px; color:#dc2626;">
+            <span>إجمالي خصم المبيعات الممنوح:</span>
+            <span style="font-weight:800;">-${totalDiscAmount.toFixed(2)} ج.م</span>
+          </div>
+          <div style="border-top:2px dashed #cbd5e1; margin-top:6px; padding-top:8px; display:flex; justify-content:space-between; align-items:center; background:#ecfdf5; margin-left:-8px; margin-right:-8px; margin-bottom:-6px; padding:10px 12px; border-radius:8px; border:1px solid #a7f3d0;">
+            <span style="font-weight:800; font-size:13px; color:#065f46;">الصافي النهائي المستحق:</span>
+            <span style="font-weight:800; font-size:17px; color:#059669;">${grandTotal.toFixed(2)} ج.م</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Signatures & Stamp -->
+      <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; margin-top:20px; padding-top:14px; border-top:1px solid #e2e8f0; text-align:center; font-size:11px; color:#64748b;">
+        <div>
+          <div style="font-weight:700; color:#334155; margin-bottom:28px;">توقيع المحاسب / مسؤول البيع</div>
+          <div style="border-bottom:1px dotted #94a3b8; width:75%; margin:0 auto;"></div>
+        </div>
+        <div>
+          <div style="font-weight:700; color:#334155; margin-bottom:28px;">توقيع العميل / المستلم</div>
+          <div style="border-bottom:1px dotted #94a3b8; width:75%; margin:0 auto;"></div>
+        </div>
+        <div>
+          <div style="font-weight:700; color:#334155; margin-bottom:10px;">ختم الصيدلية / الإدارة</div>
+          <div style="width:52px; height:52px; border:2px dashed #94a3b8; border-radius:50%; margin:0 auto; display:flex; align-items:center; justify-content:center; font-size:9px; color:#94a3b8;">
+            الختم هنا
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer Note -->
+      <div style="text-align:center; margin-top:16px; font-size:10px; color:#94a3b8; border-top:1px solid #f1f5f9; padding-top:8px;">
+        تم إصدار هذا التقرير آلياً عبر منظومة «مدير مبيعات الأدويه» • شكراً لحسن تعاملكم وثقتكم بنا
+      </div>
+    </div>
+  `;
+}
+
+async function generateInvoicePDFBlob(inv) {
+  if (typeof html2pdf === 'undefined') {
+    throw new Error('مكتبة توليد PDF غير متوفرة حالياً، يرجى التأكد من اتصال الإنترنت');
   }
 
-  window.open(whatsappUrl, '_blank');
-  showToast("تم فتح واتساب لمشاركة الفاتورة!");
+  const wrapper = document.createElement('div');
+  wrapper.id = 'tempPdfRenderWrapper';
+  wrapper.style.position = 'fixed';
+  wrapper.style.left = '-9999px';
+  wrapper.style.top = '0';
+  wrapper.style.width = '794px';
+  wrapper.style.background = '#ffffff';
+  wrapper.style.zIndex = '-9999';
+  wrapper.innerHTML = buildInvoicePrintableHTML(inv);
+  document.body.appendChild(wrapper);
+
+  const opt = {
+    margin: [6, 6, 6, 6],
+    filename: `فاتورة_مبيعات_${inv.invoiceNumber}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: {
+      scale: 2,
+      useCORS: true,
+      letterRendering: true,
+      scrollX: 0,
+      scrollY: 0,
+      windowWidth: 794
+    },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+  };
+
+  try {
+    const pdfBlob = await html2pdf().set(opt).from(wrapper).outputPdf('blob');
+    if (wrapper.parentNode) wrapper.parentNode.removeChild(wrapper);
+    return pdfBlob;
+  } catch (err) {
+    if (wrapper.parentNode) wrapper.parentNode.removeChild(wrapper);
+    throw err;
+  }
+}
+
+async function downloadSalesInvoicePDF(inv) {
+  if (!inv || !inv.items || inv.items.length === 0) {
+    showToast("الفاتورة فارغة ولا تحتوي على أصناف!", "error");
+    return;
+  }
+
+  showToast("⏳ جاري إنشاء وتنسيق تقرير الفاتورة بصيغة PDF...", "info");
+  try {
+    const wrapper = document.createElement('div');
+    wrapper.id = 'tempPdfRenderWrapper';
+    wrapper.style.position = 'fixed';
+    wrapper.style.left = '-9999px';
+    wrapper.style.top = '0';
+    wrapper.style.width = '794px';
+    wrapper.style.background = '#ffffff';
+    wrapper.style.zIndex = '-9999';
+    wrapper.innerHTML = buildInvoicePrintableHTML(inv);
+    document.body.appendChild(wrapper);
+
+    const opt = {
+      margin: [6, 6, 6, 6],
+      filename: `فاتورة_مبيعات_${inv.invoiceNumber}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, letterRendering: true, scrollX: 0, scrollY: 0, windowWidth: 794 },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+
+    await html2pdf().set(opt).from(wrapper).save();
+    if (wrapper.parentNode) wrapper.parentNode.removeChild(wrapper);
+    showToast("✅ تم تنزيل تقرير الفاتورة PDF بنجاح!", "success");
+  } catch (err) {
+    console.error(err);
+    showToast("تعذر إنشاء ملف PDF تلقائياً، جاري فتح الطباعة المباشرة", "error");
+    printSalesInvoiceA4(inv);
+  }
+}
+
+async function shareSalesInvoicePDFViaWhatsApp(inv) {
+  if (!inv || !inv.items || inv.items.length === 0) {
+    showToast("الفاتورة فارغة ولا تحتوي على أدوية!", "error");
+    return;
+  }
+
+  showToast("⏳ جاري تجهيز تقرير الفاتورة PDF للمشاركة عبر واتساب...", "info");
+  try {
+    const pdfBlob = await generateInvoicePDFBlob(inv);
+    const fileName = `فاتورة_مبيعات_${inv.invoiceNumber}.pdf`;
+    const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+
+    // Check if browser supports Web Share API with files (Android / iOS)
+    if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+      await navigator.share({
+        files: [pdfFile],
+        title: `فاتورة مبيعات ${inv.invoiceNumber}`,
+        text: `مرفق لسيادتكم تقرير فاتورة مبيعات الأدوية رقم (${inv.invoiceNumber}) - صافي الفاتورة: ${Number(inv.grandTotal).toFixed(2)} ج.م`
+      });
+      showToast("✅ تم فتح نافذة المشاركة بنجاح لإرسال الـ PDF عبر واتساب!");
+      return;
+    }
+
+    // Fallback for Desktop or devices without direct file sharing:
+    // 1. Download the PDF file directly to device:
+    const blobUrl = URL.createObjectURL(pdfBlob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+
+    // 2. Open WhatsApp with pre-filled professional notification:
+    const cleanPhone = (inv.customerPhone || '').replace(/^0/, '20');
+    const waText = `السلام عليكم ورحمة الله وبركاته،\nمرفق لسيادتكم تقرير فاتورة مبيعات الأدوية رقم (${inv.invoiceNumber})\n💰 صافي الفاتورة: ${Number(inv.grandTotal).toFixed(2)} ج.م\nتم تحميل ملف الفاتورة بصيغة (PDF) منسق رسمياً إلى جهازك، يرجى الاطلاع على المرفق.\nشكراً لتعاملكم الراقي معنا!`;
+    const encodedText = encodeURIComponent(waText);
+    const waUrl = cleanPhone.length >= 10 
+      ? `https://wa.me/${cleanPhone}?text=${encodedText}` 
+      : `https://wa.me/?text=${encodedText}`;
+
+    window.open(waUrl, '_blank');
+
+    // 3. Informative instruction modal:
+    openAppModal("📲 تم تجهيز الفاتورة وفتح واتساب", `
+      <div style="text-align:center; padding:10px 4px;">
+        <div style="font-size:46px; margin-bottom:8px;">📄✨</div>
+        <h3 style="color:#059669; font-weight:800; margin-bottom:8px;">تم تنزيل ملف الفاتورة PDF بنجاح!</h3>
+        <p style="font-size:13px; color:#475569; line-height:1.6; margin-bottom:14px;">
+          تم حفظ ملف <b>${fileName}</b> في جهازك، وتم فتح محادثة واتساب الخاصة بالعميل.<br>
+          ما عليك سوى الضغط على علامة <b>المرفقات (📎)</b> في واتساب وإرسال ملف الفاتورة للعميل مباشرة.
+        </p>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <a href="${waUrl}" target="_blank" class="btn btn-whatsapp" style="text-decoration:none;">
+            💬 إعادة فتح واتساب للعميل
+          </a>
+          <button class="btn btn-primary" onclick="closeAppModal()">
+            حسناً، فهمت
+          </button>
+        </div>
+      </div>
+    `);
+  } catch (err) {
+    console.error(err);
+    showToast("تعذر إنشاء تقرير PDF: " + err.message, "error");
+  }
+}
+
+function printSalesInvoiceA4(inv) {
+  if (!inv || !inv.items || inv.items.length === 0) {
+    showToast("الفاتورة فارغة!", "error");
+    return;
+  }
+
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    showToast("يرجى السماح بالنوافذ المنبثقة لإتمام الطباعة!", "error");
+    return;
+  }
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+      <meta charset="UTF-8">
+      <title>فاتورة مبيعات ${inv.invoiceNumber}</title>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
+      <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 20px; background: #fff; font-family: 'Tajawal', sans-serif; direction: rtl; }
+        @media print {
+          body { padding: 0; }
+          @page { size: A4 portrait; margin: 8mm; }
+        }
+      </style>
+    </head>
+    <body>
+      ${buildInvoicePrintableHTML(inv)}
+      <script>
+        window.onload = function() {
+          window.focus();
+          window.print();
+        };
+      <\/script>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+}
+
+let currentPreviewingInvoice = null;
+
+function previewSalesInvoiceModal(inv) {
+  if (!inv || !inv.items || inv.items.length === 0) {
+    showToast("الفاتورة فارغة!", "error");
+    return;
+  }
+
+  currentPreviewingInvoice = inv;
+  const html = `
+    <div>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
+        <button class="btn btn-pdf btn-small" onclick="downloadSalesInvoicePDF(currentPreviewingInvoice)">
+          📥 تحميل PDF
+        </button>
+        <button class="btn btn-whatsapp btn-small" onclick="shareSalesInvoicePDFViaWhatsApp(currentPreviewingInvoice)">
+          📲 إرسال PDF واتساب
+        </button>
+        <button class="btn btn-outline btn-small" onclick="printSalesInvoiceA4(currentPreviewingInvoice)">
+          🖨️ طباعة الفاتورة
+        </button>
+      </div>
+
+      <div style="max-height:65vh; overflow-y:auto; border:1px solid #e2e8f0; border-radius:10px; background:#fff; padding:6px; box-shadow:inset 0 1px 3px rgba(0,0,0,0.05);">
+        ${buildInvoicePrintableHTML(inv)}
+      </div>
+    </div>
+  `;
+  openAppModal(`معاينة فاتورة مبيعات (${inv.invoiceNumber})`, html);
+}
+
+function getCurrentSalesDraftInvoice() {
+  const invoiceNo = document.getElementById('saleInvoiceNo') ? document.getElementById('saleInvoiceNo').value : (currentSalesInvoiceNo || `SAL-${Date.now() % 100000}`);
+  const custId = parseInt(document.getElementById('saleCustomerSelect') ? document.getElementById('saleCustomerSelect').value : currentSalesCustomerId) || 1;
+  const customer = db.customers.find(c => c.id === custId) || { name: "عميل عام", phone: "", address: "" };
+  const grandTotal = currentSalesItems.reduce((acc, it) => acc + it.lineTotal, 0);
+
+  return {
+    id: Date.now(),
+    invoiceNumber: invoiceNo,
+    customerId: custId,
+    customerName: customer.name,
+    customerPhone: customer.phone || "",
+    customerAddress: customer.address || "",
+    date: Date.now(),
+    grandTotal: grandTotal,
+    items: [...currentSalesItems]
+  };
+}
+
+function downloadCurrentSalesDraftPDF() {
+  if (currentSalesItems.length === 0) {
+    showToast("يرجى إضافة أدوية للفاتورة أولاً!", "error");
+    return;
+  }
+  downloadSalesInvoicePDF(getCurrentSalesDraftInvoice());
+}
+
+function shareCurrentSalesDraftPDFToWhatsApp() {
+  if (currentSalesItems.length === 0) {
+    showToast("يرجى إضافة أدوية للفاتورة أولاً!", "error");
+    return;
+  }
+  shareSalesInvoicePDFViaWhatsApp(getCurrentSalesDraftInvoice());
+}
+
+function previewCurrentSalesDraftModal() {
+  if (currentSalesItems.length === 0) {
+    showToast("يرجى إضافة أدوية للفاتورة أولاً!", "error");
+    return;
+  }
+  previewSalesInvoiceModal(getCurrentSalesDraftInvoice());
+}
+
+let lastCompletedSalesInvoice = null;
+
+function openSalesInvoiceSuccessModal(inv) {
+  lastCompletedSalesInvoice = inv;
+  const html = `
+    <div style="text-align:center; padding:10px 0;">
+      <div style="width:60px; height:60px; background:#dcfce7; color:#15803d; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:32px; margin:0 auto 12px auto;">
+        ✓
+      </div>
+      <h3 style="font-weight:800; font-size:18px; color:#0f172a; margin-bottom:6px;">تم حفظ فاتورة البيع بنجاح!</h3>
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:12px; margin-bottom:16px; font-size:13px; text-align:right;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+          <span style="color:#64748b;">رقم الفاتورة:</span>
+          <b style="color:#0284c7;">#${inv.invoiceNumber}</b>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+          <span style="color:#64748b;">العميل:</span>
+          <b>${inv.customerName}</b>
+        </div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+          <span style="color:#64748b;">عدد الأصناف:</span>
+          <b>${inv.items.length} صنف</b>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-weight:800; font-size:15px; color:#059669; border-top:1px dashed #cbd5e1; padding-top:6px; margin-top:4px;">
+          <span>صافي الفاتورة:</span>
+          <span>${Number(inv.grandTotal).toFixed(2)} ج.م</span>
+        </div>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <button class="btn btn-whatsapp" style="font-size:14px;" onclick="shareSalesInvoicePDFViaWhatsApp(lastCompletedSalesInvoice)">
+          📲 إرسال تقرير PDF للعميل عبر واتساب
+        </button>
+        <button class="btn btn-pdf" style="font-size:14px;" onclick="downloadSalesInvoicePDF(lastCompletedSalesInvoice)">
+          📄 تحميل تقرير الفاتورة PDF
+        </button>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+          <button class="btn btn-outline" onclick="printSalesInvoiceA4(lastCompletedSalesInvoice)">
+            🖨️ طباعة الفاتورة
+          </button>
+          <button class="btn btn-outline" onclick="previewSalesInvoiceModal(lastCompletedSalesInvoice)">
+            👁️ معاينة التقرير
+          </button>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:6px; border-top:1px solid #e2e8f0; padding-top:10px;">
+          <button class="btn btn-primary" onclick="closeAppModal(); navigateTo('sales');">
+            ➕ فاتورة جديدة
+          </button>
+          <button class="btn btn-outline" onclick="closeAppModal(); navigateTo('inventory');">
+            💊 فحص المخزون
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+  openAppModal("إصدار فاتورة بيع", html);
 }
 
 function confirmSalesInvoice() {
@@ -1975,9 +2795,9 @@ function confirmSalesInvoice() {
     return;
   }
 
-  const invoiceNo = document.getElementById('saleInvoiceNo').value || `SAL-${Date.now() % 100000}`;
-  const custId = parseInt(document.getElementById('saleCustomerSelect').value) || 1;
-  const customer = db.customers.find(c => c.id === custId) || { name: "عميل عام" };
+  const invoiceNo = document.getElementById('saleInvoiceNo') ? document.getElementById('saleInvoiceNo').value : (currentSalesInvoiceNo || `SAL-${Date.now() % 100000}`);
+  const custId = parseInt(document.getElementById('saleCustomerSelect') ? document.getElementById('saleCustomerSelect').value : currentSalesCustomerId) || 1;
+  const customer = db.customers.find(c => c.id === custId) || { name: "عميل عام", phone: "", address: "" };
   const grandTotal = currentSalesItems.reduce((acc, it) => acc + it.lineTotal, 0);
 
   currentSalesItems.forEach(item => {
@@ -2005,21 +2825,26 @@ function confirmSalesInvoice() {
     customer.totalPurchases += grandTotal;
   }
 
-  db.salesInvoices.unshift({
+  const savedInvoice = {
     id: Date.now(),
     invoiceNumber: invoiceNo,
     customerId: custId,
     customerName: customer.name,
     customerPhone: customer.phone || "",
+    customerAddress: customer.address || "",
     date: Date.now(),
     grandTotal: grandTotal,
     items: [...currentSalesItems]
-  });
+  };
+
+  db.salesInvoices.unshift(savedInvoice);
 
   saveDB();
   currentSalesItems = [];
-  showToast("تم إصدار فاتورة البيع وخصم المخزون بنجاح!");
-  navigateTo('inventory');
+  currentSalesInvoiceNo = `SAL-${Math.floor(10000 + Math.random() * 90000)}`;
+
+  showToast("تم إصدار وحفظ فاتورة البيع وخصم المخزون بنجاح!", "success");
+  openSalesInvoiceSuccessModal(savedInvoice);
 }
 
 // -------------------------------------------------------------
@@ -2639,9 +3464,12 @@ function renderCustomerInvoicesScreen() {
   `;
 }
 
+let currentDetailInvoice = null;
+
 function openSalesInvoiceDetail(invId) {
   const inv = db.salesInvoices.find(i => i.id === invId);
   if (!inv) return;
+  currentDetailInvoice = inv;
 
   const text = generateWhatsAppText(inv.invoiceNumber, inv.customerName, inv.items, inv.grandTotal);
   const encodedText = encodeURIComponent(text);
@@ -2650,36 +3478,59 @@ function openSalesInvoiceDetail(invId) {
 
   const html = `
     <div>
-      <div style="padding:10px; background:#f0fdf4; border-radius:10px; margin-bottom:12px;">
-        <div style="font-weight:800; color:var(--secondary);">رقم الفاتورة: ${inv.invoiceNumber}</div>
-        <div style="font-size:12px; color:var(--text-muted);">العميل: ${inv.customerName} | التاريخ: ${new Date(inv.date).toLocaleDateString('ar-EG')}</div>
+      <div style="padding:10px 14px; background:#f0fdf4; border-radius:10px; margin-bottom:12px; border:1px solid #bbf7d0;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-weight:800; color:var(--secondary); font-size:15px;">فاتورة رقم: #${inv.invoiceNumber}</span>
+          <span class="badge badge-green">معتمدة ومسددة</span>
+        </div>
+        <div style="font-size:12px; color:var(--text-muted); margin-top:4px;">
+          العميل: <b>${inv.customerName}</b> | التاريخ: ${formatInvoiceDate(inv.date)}
+        </div>
+        ${inv.customerPhone ? `<div style="font-size:11px; color:var(--text-muted); margin-top:2px;">الهاتف: <span style="direction:ltr; display:inline-block;">${inv.customerPhone}</span></div>` : ''}
       </div>
 
-      <div style="font-size:12px; font-weight:700; margin-bottom:8px;">الأدوية في الفاتورة:</div>
-      <div style="display:flex; flex-direction:column; gap:6px;">
+      <div style="font-size:12px; font-weight:800; margin-bottom:8px; color:var(--text-main);">الأدوية في الفاتورة (${inv.items.length}):</div>
+      <div style="display:flex; flex-direction:column; gap:6px; max-height:200px; overflow-y:auto; padding:2px;">
         ${inv.items.map(it => `
           <div style="padding:8px 10px; background:#f8fafc; border-radius:8px; border:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div>
               <div style="font-weight:700; font-size:13px;">${it.productName}</div>
               <div style="font-size:11px; color:var(--text-muted);">
-                ${it.quantity} علبة × سعر الجمهور: ${it.officialPrice} ج.م (خصم: ${it.saleDiscountRate}%)
+                ${it.quantity} علبة × جمهور: ${Number(it.officialPrice).toFixed(2)} ج.م (خصم: ${Number(it.saleDiscountRate).toFixed(1)}%)
               </div>
             </div>
             <div style="font-weight:800; color:var(--secondary); font-size:13px;">
-              ${it.lineTotal.toFixed(2)} ج.م
+              ${Number(it.lineTotal).toFixed(2)} ج.م
             </div>
           </div>
         `).join('')}
       </div>
 
-      <div style="margin-top:14px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; font-weight:800; font-size:16px;">
-        <span>الإجمالي العام:</span>
-        <span style="color:var(--secondary);">${inv.grandTotal.toFixed(2)} ج.م</span>
+      <div style="margin-top:12px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:space-between; font-weight:800; font-size:16px;">
+        <span>الإجمالي الصافي:</span>
+        <span style="color:var(--secondary);">${Number(inv.grandTotal).toFixed(2)} ج.م</span>
       </div>
 
-      <a href="${waUrl}" target="_blank" class="btn btn-whatsapp" style="margin-top:14px; text-decoration:none;">
-        📲 إرسال الفاتورة للعميل عبر واتساب
-      </a>
+      <!-- Action Buttons -->
+      <div style="display:flex; flex-direction:column; gap:8px; margin-top:14px;">
+        <button class="btn btn-whatsapp" onclick="shareSalesInvoicePDFViaWhatsApp(currentDetailInvoice)">
+          📲 إرسال تقرير PDF للعميل عبر واتساب
+        </button>
+        <button class="btn btn-pdf" onclick="downloadSalesInvoicePDF(currentDetailInvoice)">
+          📄 تحميل تقرير الفاتورة PDF
+        </button>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+          <button class="btn btn-outline" onclick="printSalesInvoiceA4(currentDetailInvoice)">
+            🖨️ طباعة A4
+          </button>
+          <button class="btn btn-outline" onclick="previewSalesInvoiceModal(currentDetailInvoice)">
+            👁️ معاينة الفاتورة
+          </button>
+        </div>
+        <a href="${waUrl}" target="_blank" class="btn btn-outline" style="text-decoration:none; font-size:11px; color:#64748b;">
+          💬 إرسال نص الفاتورة القديم لواتساب (بدون PDF)
+        </a>
+      </div>
     </div>
   `;
   openAppModal("تفاصيل فاتورة البيع", html);
