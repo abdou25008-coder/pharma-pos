@@ -2190,9 +2190,12 @@ function calculateAndRenderSalesUI() {
           ${currentSalesItems.map((item, idx) => `
             <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 10px; background:#f8fafc; border-radius:8px; border:1px solid var(--border);">
               <div>
-                <div style="font-weight:800; font-size:13px;">${item.productName}</div>
-                <div style="font-size:11px; color:var(--text-muted);">
-                  ${item.quantity} علبة × ${item.officialPrice} ج.م (خصم: ${item.saleDiscountRate}%) | الصافي للعلبة: ${item.netUnitPrice.toFixed(2)} ج.م
+                <div style="font-weight:800; font-size:13px;">
+                  <span style="display:inline-block; background:#e0f2fe; color:#0369a1; padding:1px 8px; border-radius:6px; margin-left:6px; font-size:12px;">${item.quantity} علبة</span>
+                  ${item.productName}
+                </div>
+                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">
+                  سعر الجمهور: ${item.officialPrice} ج.م (خصم: ${item.saleDiscountRate}%) | الصافي للعلبة: ${item.netUnitPrice.toFixed(2)} ج.م
                 </div>
               </div>
               <div style="display:flex; align-items:center; gap:8px;">
@@ -2321,14 +2324,12 @@ function generateWhatsAppText(invoiceNo, customerName, items, grandTotal) {
   text += `👤 *العميل:* ${customerName}\n`;
   text += `📅 *التاريخ:* ${new Date().toLocaleDateString('ar-EG')}\n`;
   text += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
-  text += `*بنود الأدوية:*\n`;
+  text += `*بنود الأدوية (العدد - الصنف):*\n`;
 
-  items.forEach((it, i) => {
-    text += `${i + 1}. *${it.productName}*\n`;
-    text += `   • الكمية: ${it.quantity} علبة\n`;
+  items.forEach((it) => {
+    text += `▪ *العدد: ${it.quantity} علبة* — *${it.productName}*\n`;
     text += `   • سعر الجمهور: ${it.officialPrice} ج.م | الخصم: ${it.saleDiscountRate}%\n`;
-    text += `   • صافي العلبة: ${it.netUnitPrice.toFixed(2)} ج.م\n`;
-    text += `   • الإجمالي: *${it.lineTotal.toFixed(2)} ج.م*\n\n`;
+    text += `   • صافي العلبة: ${it.netUnitPrice.toFixed(2)} ج.م | الإجمالي: *${it.lineTotal.toFixed(2)} ج.م*\n\n`;
   });
 
   text += `━━━━━━━━━━━━━━━━━━━━━\n`;
@@ -2498,7 +2499,14 @@ function renderInvoiceToCanvas(inv) {
   ctx.fillText('عدد الأصناف بالفاتورة: ' + items.length + ' صنف', 455, 278);
   ctx.fillText('إجمالي عدد العبوات: ' + totalUnits + ' علبة', 455, 308);
 
-  // 4. Items Table Header
+  // 4. Items Table Header (Starts on the right with Quantity/Count instead of serial number)
+  // Columns RTL:
+  // [1040..1180] العدد / الكمية (center 1110)
+  // [610..1040] اسم الصنف / الدواء (right 1022)
+  // [470..610] سعر الجمهور (center 540)
+  // [355..470] الخصم % (center 412.5)
+  // [215..355] صافي العلبة (center 285)
+  // [60..215] الإجمالي الصافي (center 137.5)
   const tableY = 356;
   const headerH = 52;
   ctx.fillStyle = '#0284c7';
@@ -2506,7 +2514,7 @@ function renderInvoiceToCanvas(inv) {
 
   ctx.strokeStyle = '#38bdf8';
   ctx.lineWidth = 1;
-  [210, 350, 460, 600, 720, 1120].forEach(vx => {
+  [215, 355, 470, 610, 1040].forEach(vx => {
     ctx.beginPath();
     ctx.moveTo(vx, tableY);
     ctx.lineTo(vx, tableY + headerH);
@@ -2516,15 +2524,14 @@ function renderInvoiceToCanvas(inv) {
   ctx.fillStyle = '#ffffff';
   ctx.font = '800 17px ' + FONT;
   ctx.textAlign = 'center';
-  ctx.fillText('م', 1150, tableY + 33);
+  ctx.fillText('العدد / الكمية', 1110, tableY + 33);
   ctx.textAlign = 'right';
-  ctx.fillText('اسم الصنف / الدواء', 1104, tableY + 33);
+  ctx.fillText('اسم الصنف / الدواء', 1022, tableY + 33);
   ctx.textAlign = 'center';
-  ctx.fillText('الكمية', 660, tableY + 33);
-  ctx.fillText('سعر الجمهور', 530, tableY + 33);
-  ctx.fillText('الخصم %', 405, tableY + 33);
-  ctx.fillText('صافي العلبة', 280, tableY + 33);
-  ctx.fillText('الإجمالي الصافي', 135, tableY + 33);
+  ctx.fillText('سعر الجمهور', 540, tableY + 33);
+  ctx.fillText('الخصم %', 412.5, tableY + 33);
+  ctx.fillText('صافي العلبة', 285, tableY + 33);
+  ctx.fillText('الإجمالي الصافي', 137.5, tableY + 33);
 
   // 5. Items Table Rows
   let curY = tableY + headerH;
@@ -2536,7 +2543,7 @@ function renderInvoiceToCanvas(inv) {
     ctx.lineWidth = 1;
     ctx.strokeRect(60, curY, 1120, rowH);
 
-    [210, 350, 460, 600, 720, 1120].forEach(vx => {
+    [215, 355, 470, 610, 1040].forEach(vx => {
       ctx.beginPath();
       ctx.moveTo(vx, curY);
       ctx.lineTo(vx, curY + rowH);
@@ -2550,36 +2557,38 @@ function renderInvoiceToCanvas(inv) {
     const netUnit = Number(it.netUnitPrice) || (offPrice * (1 - discRate / 100));
     const lineTot = Number(it.lineTotal) || (qty * netUnit);
 
+    // Col 1 (Rightmost): Quantity / Count
     ctx.textAlign = 'center';
-    ctx.font = '700 16px ' + FONT;
-    ctx.fillStyle = '#64748b';
-    ctx.fillText(String(idx + 1), 1150, textY);
+    ctx.font = '800 18px ' + FONT;
+    ctx.fillStyle = '#0369a1';
+    ctx.fillText(qty + ' علبة', 1110, textY);
 
+    // Col 2: Product Name
     ctx.textAlign = 'right';
     ctx.font = '800 17px ' + FONT;
     ctx.fillStyle = '#0f172a';
-    ctx.fillText(String(it.productName || ''), 1104, textY, 372);
+    ctx.fillText(String(it.productName || ''), 1022, textY, 396);
 
+    // Col 3: Official Price
     ctx.textAlign = 'center';
-    ctx.font = '800 17px ' + FONT;
-    ctx.fillStyle = '#0f172a';
-    ctx.fillText(qty + ' علبة', 660, textY);
-
     ctx.font = '700 16px ' + FONT;
     ctx.fillStyle = '#475569';
-    ctx.fillText(offPrice.toFixed(2) + ' ج.م', 530, textY);
+    ctx.fillText(offPrice.toFixed(2) + ' ج.م', 540, textY);
 
+    // Col 4: Discount %
     ctx.font = '800 16px ' + FONT;
     ctx.fillStyle = '#b45309';
-    ctx.fillText(discRate.toFixed(1) + '%', 405, textY);
+    ctx.fillText(discRate.toFixed(1) + '%', 412.5, textY);
 
+    // Col 5: Net Unit Price
     ctx.font = '800 16px ' + FONT;
     ctx.fillStyle = '#0369a1';
-    ctx.fillText(netUnit.toFixed(2) + ' ج.م', 280, textY);
+    ctx.fillText(netUnit.toFixed(2) + ' ج.م', 285, textY);
 
+    // Col 6: Line Total
     ctx.font = '800 17px ' + FONT;
     ctx.fillStyle = '#059669';
-    ctx.fillText(lineTot.toFixed(2) + ' ج.م', 135, textY);
+    ctx.fillText(lineTot.toFixed(2) + ' ج.م', 137.5, textY);
 
     curY += rowH;
   });
@@ -3085,11 +3094,15 @@ function renderInventoryScreen() {
     const netCost = (p.officialPrice || 0) * (1 - (p.purchaseDiscountRate || 0) / 100);
     return acc + ((p.stockQuantity || 0) * netCost);
   }, 0);
-  const totalStockPublicVal = db.products.reduce((acc, p) => acc + ((p.stockQuantity || 0) * (p.officialPrice || 0)), 0);
+  const totalStockNetSaleVal = db.products.reduce((acc, p) => {
+    const netSale = (p.officialPrice || 0) * (1 - (p.saleDiscountRate || 0) / 100);
+    return acc + ((p.stockQuantity || 0) * netSale);
+  }, 0);
+  const totalExpectedProfit = totalStockNetSaleVal - totalStockCostVal;
 
   screenContainer.innerHTML = `
     <!-- Total Inventory Valuation KPI Cards -->
-    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:8px; margin-bottom:10px;">
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:8px; margin-bottom:10px;">
       <div class="card" style="background:#f0fdf4; border-color:#bbf7d0; padding:10px; text-align:center;">
         <span style="font-size:11px; color:#166534; display:block; font-weight:700;">📦 إجمالي رصيد المخزن</span>
         <b style="font-size:16px; color:#15803d; font-weight:800;">${totalStockQty} علبة</b>
@@ -3099,8 +3112,11 @@ function renderInventoryScreen() {
         <b style="font-size:15px; color:#0284c7; font-weight:800;">${totalStockCostVal.toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ج.م</b>
       </div>
       <div class="card" style="background:#fef3c7; border-color:#fde68a; padding:10px; text-align:center;">
-        <span style="font-size:11px; color:#92400e; display:block; font-weight:700;">🏷️ قيمة البضاعة (جمهور)</span>
-        <b style="font-size:15px; color:#b45309; font-weight:800;">${totalStockPublicVal.toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ج.م</b>
+        <span style="font-size:11px; color:#92400e; display:block; font-weight:700;">📈 صافي قيمة البضاعة بالأرباح التقريبية</span>
+        <b style="font-size:15px; color:#b45309; font-weight:800; display:block;">${totalStockNetSaleVal.toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ج.م</b>
+        <span style="font-size:11px; color:#15803d; font-weight:800; display:inline-block; margin-top:2px; background:#dcfce7; padding:1px 8px; border-radius:6px;">
+          الربح التقريبي: +${totalExpectedProfit.toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ج.م
+        </span>
       </div>
     </div>
 
@@ -3126,8 +3142,10 @@ function renderInventoryScreen() {
     <div class="inventory-grid">
       ${filtered.map(p => {
         const netPurchasePrice = (p.officialPrice || 0) * (1 - (p.purchaseDiscountRate || 0) / 100);
+        const netSalePrice = (p.officialPrice || 0) * (1 - (p.saleDiscountRate || 0) / 100);
         const totalItemCost = (p.stockQuantity || 0) * netPurchasePrice;
-        const totalItemPublic = (p.stockQuantity || 0) * (p.officialPrice || 0);
+        const totalItemNetSale = (p.stockQuantity || 0) * netSalePrice;
+        const totalItemProfit = totalItemNetSale - totalItemCost;
 
         return `
         <div class="card">
@@ -3156,18 +3174,19 @@ function renderInventoryScreen() {
           </div>
           <div class="row-2" style="font-size:11px; color:var(--text-muted); margin-top:2px;">
             <div>خصم الشراء: <b style="color:#0284c7;">${p.purchaseDiscountRate}%</b></div>
-            <div>خصم البيع: <b style="color:var(--warning);">${p.saleDiscountRate}%</b> (صافي: ${(p.officialPrice * (1 - p.saleDiscountRate/100)).toFixed(2)} ج.م)</div>
+            <div>خصم البيع: <b style="color:var(--warning);">${p.saleDiscountRate}%</b> (صافي: ${netSalePrice.toFixed(2)} ج.م)</div>
           </div>
 
           <!-- Stock Valuation Section for this specific item -->
           <div style="margin-top:8px; padding:8px 10px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:10px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">
             <div>
-              <span style="font-size:11px; color:#1e40af; font-weight:700; display:block;">💰 إجمالي قيمة رصيد البضاعة (شراء):</span>
+              <span style="font-size:11px; color:#1e40af; font-weight:700; display:block;">💰 إجمالي تكلفة البضاعة (شراء):</span>
               <b style="font-size:14px; color:#0284c7; font-weight:800;">${totalItemCost.toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ج.م</b>
             </div>
             <div style="text-align:left;">
-              <span style="font-size:10px; color:var(--text-muted); display:block;">بسعر الجمهور الرسمي</span>
-              <b style="font-size:12px; color:#334155;">${totalItemPublic.toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ج.م</b>
+              <span style="font-size:10px; color:#166534; font-weight:700; display:block;">📈 صافي القيمة بالربح (خصم بيع ${p.saleDiscountRate}%)</span>
+              <b style="font-size:13px; color:#15803d; font-weight:800;">${totalItemNetSale.toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ج.م</b>
+              <span style="font-size:10px; color:#059669; font-weight:800; display:block;">(الربح التقريبي: +${totalItemProfit.toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ج.م)</span>
             </div>
           </div>
 
@@ -3711,9 +3730,12 @@ function openSalesInvoiceDetail(invId) {
         ${inv.items.map(it => `
           <div style="padding:8px 10px; background:#f8fafc; border-radius:8px; border:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div>
-              <div style="font-weight:700; font-size:13px;">${it.productName}</div>
-              <div style="font-size:11px; color:var(--text-muted);">
-                ${it.quantity} علبة × جمهور: ${Number(it.officialPrice).toFixed(2)} ج.م (خصم: ${Number(it.saleDiscountRate).toFixed(1)}%)
+              <div style="font-weight:700; font-size:13px;">
+                <span style="display:inline-block; background:#e0f2fe; color:#0369a1; padding:1px 8px; border-radius:6px; margin-left:6px; font-size:12px; font-weight:800;">${it.quantity} علبة</span>
+                ${it.productName}
+              </div>
+              <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">
+                سعر الجمهور: ${Number(it.officialPrice).toFixed(2)} ج.م (خصم: ${Number(it.saleDiscountRate).toFixed(1)}%)
               </div>
             </div>
             <div style="font-weight:800; color:var(--secondary); font-size:13px;">
