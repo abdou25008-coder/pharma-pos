@@ -691,7 +691,7 @@ function navigateTo(screen) {
 // 1. HOME SCREEN
 // -------------------------------------------------------------
 function renderHomeScreen() {
-  topBarTitle.innerText = "مدير مبيعات الأدويه";
+  topBarTitle.innerText = "Farma Store";
   topBarSubtitle.innerText = "منظومة مبيعات وتوزيع الأدوية وإدارة المخزون";
 
   const totalSales = db.salesInvoices.reduce((acc, inv) => acc + (inv.grandTotal || 0), 0);
@@ -2318,7 +2318,7 @@ function removeSaleItem(idx) {
 }
 
 function generateWhatsAppText(invoiceNo, customerName, items, grandTotal) {
-  let text = `*فاتورة بيع أدوية - مدير مبيعات الأدويه*\n`;
+  let text = `*فاتورة بيع أدوية - Farma Store*\n`;
   text += `━━━━━━━━━━━━━━━━━━━━━\n`;
   text += `📄 *رقم الفاتورة:* ${invoiceNo}\n`;
   text += `👤 *العميل:* ${customerName}\n`;
@@ -2394,14 +2394,18 @@ function drawRoundedRect(ctx, x, y, w, h, r, fill, stroke, lineWidth = 1) {
 
 function renderInvoiceToCanvas(inv) {
   const items = toCleanArray(inv.items);
-  const subtotalOfficial = items.reduce((acc, it) => acc + ((Number(it.quantity) || 0) * (Number(it.officialPrice) || 0)), 0);
   const grandTotal = Number(inv.grandTotal) || items.reduce((acc, it) => acc + (Number(it.lineTotal) || 0), 0);
-  const totalDiscAmount = Math.max(0, subtotalOfficial - grandTotal);
   const totalUnits = items.reduce((acc, it) => acc + (Number(it.quantity) || 0), 0);
 
   const W = 1240;
   const rowH = 54;
-  const H = Math.max(1750, 440 + (items.length * rowH) + 460);
+  const tableY = 350;
+  const headerH = 52;
+  const rowsTotalH = items.length * rowH;
+  const curY = tableY + headerH + rowsTotalH;
+  const totalsY = curY + 24;
+  const totalsH = 74;
+  const H = Math.max(860, totalsY + totalsH + 46);
 
   const canvas = document.createElement('canvas');
   canvas.width = W;
@@ -2409,64 +2413,71 @@ function renderInvoiceToCanvas(inv) {
   const ctx = canvas.getContext('2d');
   const FONT = "'Tajawal', 'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif";
 
-  // 1. White Page Background & Border Frame
+  // 1. White Page Background & Outer Border Frame
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, W, H);
-  drawRoundedRect(ctx, 28, 28, W - 56, H - 56, 12, '#ffffff', '#cbd5e1', 2);
+  drawRoundedRect(ctx, 28, 28, W - 56, H - 56, 14, '#ffffff', '#cbd5e1', 2);
   ctx.fillStyle = '#0284c7';
-  ctx.fillRect(30, 30, W - 60, 10);
+  ctx.fillRect(32, 30, W - 64, 10);
 
-  // 2. Header Section (Right: Branding, Left: Official Invoice Badge)
-  drawRoundedRect(ctx, W - 132, 62, 72, 72, 16, '#e0f2fe', '#7dd3fc', 2);
-  ctx.font = '38px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#0284c7';
-  ctx.fillText('💊', W - 96, 111);
+  // 2. Header Section (Right: Farma Store Branding + Icon, Left: Official Invoice Badge)
+  // Expressive Pharmacy Store Emblem Icon
+  drawRoundedRect(ctx, W - 146, 56, 84, 84, 20, '#0284c7', '#0369a1', 1.5);
+  // Crisp White Medical Cross
+  ctx.fillStyle = '#ffffff';
+  drawRoundedRect(ctx, W - 109, 68, 10, 60, 4, '#ffffff', null);
+  drawRoundedRect(ctx, W - 134, 93, 60, 10, 4, '#ffffff', null);
+  // Center Glowing Store Pill Accent
+  ctx.fillStyle = '#38bdf8';
+  ctx.beginPath();
+  ctx.arc(W - 104, 98, 9, 0, Math.PI * 2);
+  ctx.fill();
 
+  // Farma Store Typography
   ctx.direction = 'rtl';
   ctx.textAlign = 'right';
-  ctx.font = '800 32px ' + FONT;
+  ctx.font = '900 36px "Segoe UI", Tahoma, Arial, sans-serif';
   ctx.fillStyle = '#0369a1';
-  ctx.fillText('مدير مبيعات الأدويه', W - 150, 96);
+  ctx.fillText('Farma Store', W - 162, 94);
 
-  ctx.font = '700 17px ' + FONT;
+  ctx.font = '700 16px ' + FONT;
   ctx.fillStyle = '#64748b';
-  ctx.fillText('منظومة توزيع الأدوية والمخزون الصيدلي الذكية', W - 150, 128);
+  ctx.fillText('منظومة إدارة وتوزيع الأدوية الذكية', W - 162, 126);
 
   // Left Header Badge & Number
-  drawRoundedRect(ctx, 60, 58, 245, 44, 10, '#0284c7', null);
+  drawRoundedRect(ctx, 60, 56, 245, 42, 10, '#0284c7', null);
   ctx.textAlign = 'center';
-  ctx.font = '800 20px ' + FONT;
+  ctx.font = '800 19px ' + FONT;
   ctx.fillStyle = '#ffffff';
-  ctx.fillText('فاتورة مبيعات رسمية', 182, 87);
+  ctx.fillText('فاتورة مبيعات رسمية', 182, 84);
 
   ctx.textAlign = 'left';
   ctx.direction = 'ltr';
   ctx.font = '800 20px ' + FONT;
   ctx.fillStyle = '#0f172a';
-  ctx.fillText('Invoice: #' + (inv.invoiceNumber || 'SAL-000'), 60, 128);
+  ctx.fillText('Invoice: #' + (inv.invoiceNumber || 'SAL-000'), 60, 124);
 
   ctx.direction = 'rtl';
   ctx.textAlign = 'left';
   ctx.font = '700 15px ' + FONT;
   ctx.fillStyle = '#475569';
-  ctx.fillText('التاريخ: ' + formatInvoiceDate(inv.date), 60, 156);
+  ctx.fillText('التاريخ: ' + formatInvoiceDate(inv.date), 60, 150);
 
   // Header Bottom Divider
   ctx.strokeStyle = '#0284c7';
   ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(60, 178);
-  ctx.lineTo(W - 60, 178);
+  ctx.moveTo(60, 172);
+  ctx.lineTo(W - 60, 172);
   ctx.stroke();
 
-  // 3. Customer & Meta Info Box
-  drawRoundedRect(ctx, 60, 198, W - 120, 136, 12, '#f8fafc', '#cbd5e1', 1.5);
+  // 3. Customer & Meta Info Box (Cleaned to show only Customer data without Pharmacy label)
+  drawRoundedRect(ctx, 60, 192, W - 120, 134, 12, '#f8fafc', '#cbd5e1', 1.5);
   ctx.strokeStyle = '#cbd5e1';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(480, 214);
-  ctx.lineTo(480, 318);
+  ctx.moveTo(480, 208);
+  ctx.lineTo(480, 312);
   ctx.stroke();
 
   // Right side: Customer Details
@@ -2474,41 +2485,32 @@ function renderInvoiceToCanvas(inv) {
   ctx.textAlign = 'right';
   ctx.font = '700 15px ' + FONT;
   ctx.fillStyle = '#64748b';
-  ctx.fillText('بيانات العميل / الصيدلية المستلمة:', W - 85, 228);
+  ctx.fillText('بيانات العميل:', W - 85, 222);
 
   ctx.font = '800 24px ' + FONT;
   ctx.fillStyle = '#0f172a';
-  ctx.fillText('العميل: ' + (inv.customerName || 'عميل نقدي عام'), W - 85, 266);
+  ctx.fillText('اسم العميل: ' + (inv.customerName || 'عميل عام'), W - 85, 260);
 
   const phoneStr = inv.customerPhone ? ('رقم الهاتف: ' + inv.customerPhone) : 'رقم الهاتف: —';
   const addrStr = inv.customerAddress ? ('   |   العنوان: ' + inv.customerAddress) : '';
   ctx.font = '700 16px ' + FONT;
   ctx.fillStyle = '#334155';
-  ctx.fillText(phoneStr + addrStr, W - 85, 304);
+  ctx.fillText(phoneStr + addrStr, W - 85, 298);
 
   // Left side: Invoice Status & Counts
-  drawRoundedRect(ctx, 275, 214, 180, 34, 8, '#dcfce7', '#86efac', 1);
+  drawRoundedRect(ctx, 275, 208, 180, 34, 8, '#dcfce7', '#86efac', 1);
   ctx.textAlign = 'center';
   ctx.font = '800 15px ' + FONT;
   ctx.fillStyle = '#15803d';
-  ctx.fillText('✓ فاتورة معتمدة', 365, 237);
+  ctx.fillText('✓ فاتورة معتمدة', 365, 231);
 
   ctx.textAlign = 'right';
   ctx.font = '700 16px ' + FONT;
   ctx.fillStyle = '#334155';
-  ctx.fillText('عدد الأصناف بالفاتورة: ' + items.length + ' صنف', 455, 278);
-  ctx.fillText('إجمالي عدد العبوات: ' + totalUnits + ' علبة', 455, 308);
+  ctx.fillText('عدد الأصناف بالفاتورة: ' + items.length + ' صنف', 455, 272);
+  ctx.fillText('إجمالي عدد العبوات: ' + totalUnits + ' علبة', 455, 302);
 
-  // 4. Items Table Header (Starts on the right with Quantity/Count instead of serial number)
-  // Columns RTL:
-  // [1040..1180] العدد / الكمية (center 1110)
-  // [610..1040] اسم الصنف / الدواء (right 1022)
-  // [470..610] سعر الجمهور (center 540)
-  // [355..470] الخصم % (center 412.5)
-  // [215..355] صافي العلبة (center 285)
-  // [60..215] الإجمالي الصافي (center 137.5)
-  const tableY = 356;
-  const headerH = 52;
+  // 4. Items Table Header (Starts with Quantity / Count on the right)
   ctx.fillStyle = '#0284c7';
   ctx.fillRect(60, tableY, 1120, headerH);
 
@@ -2534,23 +2536,23 @@ function renderInvoiceToCanvas(inv) {
   ctx.fillText('الإجمالي الصافي', 137.5, tableY + 33);
 
   // 5. Items Table Rows
-  let curY = tableY + headerH;
+  let rowCurY = tableY + headerH;
   items.forEach((it, idx) => {
     ctx.fillStyle = (idx % 2 === 0) ? '#ffffff' : '#f1f5f9';
-    ctx.fillRect(60, curY, 1120, rowH);
+    ctx.fillRect(60, rowCurY, 1120, rowH);
 
     ctx.strokeStyle = '#cbd5e1';
     ctx.lineWidth = 1;
-    ctx.strokeRect(60, curY, 1120, rowH);
+    ctx.strokeRect(60, rowCurY, 1120, rowH);
 
     [215, 355, 470, 610, 1040].forEach(vx => {
       ctx.beginPath();
-      ctx.moveTo(vx, curY);
-      ctx.lineTo(vx, curY + rowH);
+      ctx.moveTo(vx, rowCurY);
+      ctx.lineTo(vx, rowCurY + rowH);
       ctx.stroke();
     });
 
-    const textY = curY + 34;
+    const textY = rowCurY + 34;
     const qty = Number(it.quantity) || 0;
     const offPrice = Number(it.officialPrice) || 0;
     const discRate = Number(it.saleDiscountRate) || 0;
@@ -2590,80 +2592,23 @@ function renderInvoiceToCanvas(inv) {
     ctx.fillStyle = '#059669';
     ctx.fillText(lineTot.toFixed(2) + ' ج.م', 137.5, textY);
 
-    curY += rowH;
+    rowCurY += rowH;
   });
 
-  // 6. Financial Summary Box
-  const totalsY = curY + 28;
-  drawRoundedRect(ctx, 60, totalsY, 500, 178, 12, '#f8fafc', '#cbd5e1', 1.5);
-
+  // 6. Net Grand Total Box Only (Official Price & Discount Amount removed per user request)
+  drawRoundedRect(ctx, 60, totalsY, 520, totalsH, 12, '#ecfdf5', '#10b981', 2);
+  ctx.direction = 'rtl';
   ctx.textAlign = 'right';
-  ctx.font = '700 17px ' + FONT;
-  ctx.fillStyle = '#475569';
-  ctx.fillText('إجمالي سعر الجمهور الرسمي:', 536, totalsY + 38);
-  ctx.textAlign = 'left';
-  ctx.font = '800 18px ' + FONT;
-  ctx.fillStyle = '#0f172a';
-  ctx.fillText(subtotalOfficial.toFixed(2) + ' ج.م', 84, totalsY + 38);
-
-  ctx.textAlign = 'right';
-  ctx.font = '700 17px ' + FONT;
-  ctx.fillStyle = '#dc2626';
-  ctx.fillText('إجمالي خصم المبيعات الممنوح:', 536, totalsY + 76);
-  ctx.textAlign = 'left';
-  ctx.font = '800 18px ' + FONT;
-  ctx.fillStyle = '#dc2626';
-  ctx.fillText('-' + totalDiscAmount.toFixed(2) + ' ج.م', 84, totalsY + 76);
-
-  drawRoundedRect(ctx, 76, totalsY + 98, 468, 64, 10, '#ecfdf5', '#10b981', 2);
-  ctx.textAlign = 'right';
-  ctx.font = '800 20px ' + FONT;
+  ctx.font = '800 22px ' + FONT;
   ctx.fillStyle = '#065f46';
-  ctx.fillText('الصافي النهائي المستحق:', 524, totalsY + 138);
+  ctx.fillText('الصافي النهائي المستحق:', 556, totalsY + 46);
+
   ctx.textAlign = 'left';
-  ctx.font = '800 24px ' + FONT;
+  ctx.font = '800 28px ' + FONT;
   ctx.fillStyle = '#059669';
-  ctx.fillText(grandTotal.toFixed(2) + ' ج.م', 96, totalsY + 138);
+  ctx.fillText(grandTotal.toFixed(2) + ' ج.م', 84, totalsY + 47);
 
-  // 7. Signatures & Stamp Footer
-  const sigY = Math.max(totalsY + 235, H - 220);
-  ctx.strokeStyle = '#e2e8f0';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(60, sigY - 24);
-  ctx.lineTo(W - 60, sigY - 24);
-  ctx.stroke();
-
-  ctx.textAlign = 'center';
-  ctx.font = '700 16px ' + FONT;
-  ctx.fillStyle = '#334155';
-  ctx.fillText('توقيع المحاسب / مسؤول البيع', W - 240, sigY + 10);
-  ctx.fillText('توقيع العميل / المستلم', W / 2, sigY + 10);
-  ctx.fillText('ختم الصيدلية / المؤسسة', 240, sigY + 10);
-
-  ctx.strokeStyle = '#94a3b8';
-  ctx.setLineDash([5, 5]);
-  ctx.beginPath();
-  ctx.moveTo(W - 350, sigY + 65);
-  ctx.lineTo(W - 130, sigY + 65);
-  ctx.moveTo((W / 2) - 110, sigY + 65);
-  ctx.lineTo((W / 2) + 110, sigY + 65);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.arc(240, sigY + 58, 36, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  ctx.font = '700 12px ' + FONT;
-  ctx.fillStyle = '#94a3b8';
-  ctx.fillText('الختم الرسمي', 240, sigY + 63);
-
-  // Bottom Note
-  ctx.font = '700 14px ' + FONT;
-  ctx.fillStyle = '#64748b';
-  ctx.fillText('تم إصدار هذا التقرير آلياً عبر منظومة «مدير مبيعات الأدويه» • شكراً لحسن تعاملكم وثقتكم بنا', W / 2, H - 48);
-
+  // Signatures, Stamp Circle, and Bottom Note removed per user request
   return canvas;
 }
 
