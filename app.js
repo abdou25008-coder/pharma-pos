@@ -691,7 +691,7 @@ function navigateTo(screen) {
 // 1. HOME SCREEN
 // -------------------------------------------------------------
 function renderHomeScreen() {
-  topBarTitle.innerText = "Farma Store";
+  topBarTitle.innerText = "Pharma Store";
   topBarSubtitle.innerText = "منظومة مبيعات وتوزيع الأدوية وإدارة المخزون";
 
   const totalSales = db.salesInvoices.reduce((acc, inv) => acc + (inv.grandTotal || 0), 0);
@@ -2318,7 +2318,7 @@ function removeSaleItem(idx) {
 }
 
 function generateWhatsAppText(invoiceNo, customerName, items, grandTotal) {
-  let text = `*فاتورة بيع أدوية - Farma Store*\n`;
+  let text = `*فاتورة بيع أدوية - Pharma Store*\n`;
   text += `━━━━━━━━━━━━━━━━━━━━━\n`;
   text += `📄 *رقم الفاتورة:* ${invoiceNo}\n`;
   text += `👤 *العميل:* ${customerName}\n`;
@@ -2420,7 +2420,7 @@ function renderInvoiceToCanvas(inv) {
   ctx.fillStyle = '#0284c7';
   ctx.fillRect(32, 30, W - 64, 10);
 
-  // 2. Header Section (Right: Farma Store Branding + Icon, Left: Official Invoice Badge)
+  // 2. Header Section (Right: Pharma Store Branding + Icon, Left: Official Invoice Badge)
   // Expressive Pharmacy Store Emblem Icon
   drawRoundedRect(ctx, W - 146, 56, 84, 84, 20, '#0284c7', '#0369a1', 1.5);
   // Crisp White Medical Cross
@@ -2433,12 +2433,12 @@ function renderInvoiceToCanvas(inv) {
   ctx.arc(W - 104, 98, 9, 0, Math.PI * 2);
   ctx.fill();
 
-  // Farma Store Typography
+  // Pharma Store Typography
   ctx.direction = 'rtl';
   ctx.textAlign = 'right';
   ctx.font = '900 36px "Segoe UI", Tahoma, Arial, sans-serif';
   ctx.fillStyle = '#0369a1';
-  ctx.fillText('Farma Store', W - 162, 94);
+  ctx.fillText('Pharma Store', W - 162, 94);
 
   ctx.font = '700 16px ' + FONT;
   ctx.fillStyle = '#64748b';
