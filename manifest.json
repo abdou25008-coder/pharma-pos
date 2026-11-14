@@ -1,6 +1,6 @@
 {
-  "name": "مدير مبيعات الأدويه",
-  "short_name": "مدير الأدوية",
+  "name": "Pharma Store",
+  "short_name": "Pharma Store",
   "description": "منظومة مبيعات وتوزيع الأدوية والمخزون وحسابات الصيدليات",
   "start_url": "./index.html",
   "display": "standalone",

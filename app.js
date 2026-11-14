@@ -688,6 +688,30 @@ function navigateTo(screen) {
 }
 
 // -------------------------------------------------------------
+// DISCOUNT ALERTS HELPERS & STATE
+// -------------------------------------------------------------
+let currentDiscountAlertFilter = 'LATEST';
+
+function getLatestPurchaseInvoice() {
+  const list = toCleanArray(db.purchaseInvoices);
+  if (list.length === 0) return null;
+  return [...list].sort((a, b) => (Number(b.date || b.id || 0) - Number(a.date || a.id || 0)))[0];
+}
+
+function getAlertsForInvoice(invoiceNo) {
+  if (!invoiceNo) return [];
+  const clean = String(invoiceNo).trim().toLowerCase();
+  return toCleanArray(db.discountAlerts).filter(a => String(a.invoiceNumber || '').trim().toLowerCase() === clean);
+}
+
+function setDiscountAlertFilter(filterVal) {
+  currentDiscountAlertFilter = filterVal;
+  if (currentScreen === 'discount_alerts') {
+    renderDiscountAlertsScreen();
+  }
+}
+
+// -------------------------------------------------------------
 // 1. HOME SCREEN
 // -------------------------------------------------------------
 function renderHomeScreen() {
@@ -698,7 +722,11 @@ function renderHomeScreen() {
   const totalPurchases = db.purchaseInvoices.reduce((acc, inv) => acc + (inv.netAmount || 0), 0);
   const productsCount = db.products.length;
   const lowStockCount = db.products.filter(p => p.stockQuantity <= 5).length;
-  const alertsCount = db.discountAlerts.length;
+  
+  const latestPurchaseInvoice = getLatestPurchaseInvoice();
+  const latestAlerts = latestPurchaseInvoice ? getAlertsForInvoice(latestPurchaseInvoice.invoiceNumber) : [];
+  const latestAlertsCount = latestAlerts.length;
+  const totalAlertsCount = db.discountAlerts.length;
 
   screenContainer.innerHTML = `
     <!-- Stats Grid -->
@@ -721,18 +749,31 @@ function renderHomeScreen() {
       </div>
     </div>
 
-    <!-- Discount Alert Banner if any -->
-    ${alertsCount > 0 ? `
-      <div class="card" style="background:#fef3c7; border-color:#fde68a; cursor:pointer;" onclick="navigateTo('discount_alerts')">
+    <!-- Discount Alert Banner (Prioritizing Latest Purchase Invoice) -->
+    ${latestAlertsCount > 0 ? `
+      <div class="card" style="background:#fef3c7; border: 1.5px solid #f59e0b; cursor:pointer;" onclick="setDiscountAlertFilter('LATEST'); navigateTo('discount_alerts')">
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-size:20px;">⚠️</span>
+            <span style="font-size:22px;">⚠️</span>
             <div>
-              <div style="font-weight:800; font-size:13px; color:#b45309;">تنبيه: تغير في خصومات الأدوية (${alertsCount})</div>
-              <div style="font-size:11px; color:#92400e;">تم رصد تغير في خصم المورد لأصناف مثل أوجمنتين وسولبادين</div>
+              <div style="font-weight:800; font-size:13px; color:#b45309;">تنبيه: تغير الخصم في آخر فاتورة شراء (${latestAlertsCount} صنف)</div>
+              <div style="font-size:11px; color:#92400e;">فاتورة #${latestPurchaseInvoice.invoiceNumber} من (${latestPurchaseInvoice.supplierName}) - اضغط لعرض التفاصيل</div>
             </div>
           </div>
           <span style="font-size:11px; font-weight:800; color:#b45309;">عرض التحليلات ></span>
+        </div>
+      </div>
+    ` : totalAlertsCount > 0 ? `
+      <div class="card" style="background:#f8fafc; border: 1px solid #cbd5e1; cursor:pointer;" onclick="setDiscountAlertFilter('ALL'); navigateTo('discount_alerts')">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:20px;">ℹ️</span>
+            <div>
+              <div style="font-weight:800; font-size:13px; color:#334155;">آخر فاتورة شراء مستقرة (يوجد ${totalAlertsCount} تنبيهات سابقة)</div>
+              <div style="font-size:11px; color:#64748b;">فاتورة #${latestPurchaseInvoice ? latestPurchaseInvoice.invoiceNumber : '—'} بدون تغير في الخصومات - اضغط للاستعراض</div>
+            </div>
+          </div>
+          <span style="font-size:11px; font-weight:800; color:#0284c7;">عرض التنبيهات ></span>
         </div>
       </div>
     ` : ''}
@@ -1804,12 +1845,22 @@ function renderPurchaseHistoryScreen() {
   topBarTitle.innerText = "سجل الموردين وفواتير الشراء";
   topBarSubtitle.innerText = "فواتير الشراء من شركات التوزيع ومراقبة الخصومات";
 
+  const latestPurchaseInvoice = getLatestPurchaseInvoice();
+  const latestAlerts = latestPurchaseInvoice ? getAlertsForInvoice(latestPurchaseInvoice.invoiceNumber) : [];
+  const latestAlertsCount = latestAlerts.length;
+  const totalAlertsCount = db.discountAlerts.length;
+
   screenContainer.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-      <div style="display:flex; gap:8px;">
-        <button class="btn btn-primary btn-small" onclick="navigateTo('discount_alerts')">
-          ⚠️ تحليلات وتنبيهات الخصم (${db.discountAlerts.length})
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-primary btn-small" onclick="setDiscountAlertFilter('LATEST'); navigateTo('discount_alerts')">
+          ⚠️ تنبيهات خصم آخر فاتورة (${latestAlertsCount})
         </button>
+        ${totalAlertsCount > latestAlertsCount ? `
+          <button class="btn btn-outline btn-small" onclick="setDiscountAlertFilter('ALL'); navigateTo('discount_alerts')" style="font-weight:700;">
+            🌐 كل التنبيهات (${totalAlertsCount})
+          </button>
+        ` : ''}
       </div>
       <button class="btn btn-outline btn-small" onclick="openAddSupplierModal()" style="border-color:#0284c7; color:#0284c7; font-weight:700;">
         🏢 + تسجيل شركة توزيع / مورد جديد
@@ -2022,47 +2073,216 @@ function executeDeletePurchaseInvoice(invId) {
   showToast(`تم حذف فاتورة الشراء (${inv.invoiceNumber}) وأصنافها بنجاح ومزامنة السحابة!`);
 }
 
+function deleteSingleDiscountAlert(id) {
+  if (!confirm("هل أنت متأكد من حذف هذا التنبيه؟")) return;
+  db.discountAlerts = toCleanArray(db.discountAlerts).filter(a => a.id !== id);
+  saveDB();
+  showToast("تم حذف التنبيه بنجاح ومزامنة السحابة!");
+  renderDiscountAlertsScreen();
+}
+
 function renderDiscountAlertsScreen() {
   topBarTitle.innerText = "تحليلات وتنبيهات تغير الخصم";
-  topBarSubtitle.innerText = "رصد أي اختلاف في نسب خصم الأدوية بين الفواتير";
+  topBarSubtitle.innerText = "رصد تغير نسب خصم الأدوية وفقاً لفواتير المشتريات";
+
+  const allAlerts = toCleanArray(db.discountAlerts);
+  const purchaseInvoices = toCleanArray(db.purchaseInvoices).sort((a, b) => (Number(b.date || b.id || 0) - Number(a.date || a.id || 0)));
+  const latestInvoice = purchaseInvoices.length > 0 ? purchaseInvoices[0] : null;
+
+  const latestAlerts = latestInvoice ? getAlertsForInvoice(latestInvoice.invoiceNumber) : [];
+  const latestAlertsCount = latestAlerts.length;
+  const totalAlertsCount = allAlerts.length;
+
+  let displayedAlerts = [];
+  let targetInvoice = null;
+  let activeTab = currentDiscountAlertFilter;
+
+  if (activeTab === 'LATEST') {
+    targetInvoice = latestInvoice;
+    displayedAlerts = latestAlerts;
+  } else if (activeTab === 'ALL') {
+    targetInvoice = null;
+    displayedAlerts = allAlerts;
+  } else {
+    // Specific invoice number selected
+    targetInvoice = purchaseInvoices.find(inv => String(inv.invoiceNumber).trim().toLowerCase() === String(activeTab).trim().toLowerCase());
+    displayedAlerts = getAlertsForInvoice(activeTab);
+  }
 
   screenContainer.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-      <span style="font-weight:800; font-size:13px;">تنبيهات تغير الخصم من الموردين (${db.discountAlerts.length})</span>
-      <button class="btn btn-outline btn-small" onclick="navigateTo('purchase')">
-        + إضافة فاتورة شراء
-      </button>
+    <!-- Top Filter Tabs & Action Bar -->
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button class="btn btn-small ${activeTab === 'LATEST' ? 'btn-primary' : 'btn-outline'}" 
+                onclick="setDiscountAlertFilter('LATEST')" 
+                style="font-weight:800; font-size:12px;">
+          📌 آخر فاتورة شراء (${latestAlertsCount})
+        </button>
+        <button class="btn btn-small ${activeTab === 'ALL' ? 'btn-primary' : 'btn-outline'}" 
+                onclick="setDiscountAlertFilter('ALL')" 
+                style="font-weight:800; font-size:12px;">
+          🌐 جميع التنبيهات (${totalAlertsCount})
+        </button>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button class="btn btn-outline btn-small" onclick="navigateTo('purchase')" style="font-weight:700;">
+          + إضافة فاتورة شراء
+        </button>
+      </div>
     </div>
 
-    ${db.discountAlerts.length === 0 ? `
-      <div class="card" style="text-align:center; padding:30px; color:var(--text-muted);">
-        ✅ لم يتم رصد أي تغير في نسب خصم الأدوية حتى الآن.
+    <!-- Invoice Dropdown Filter (When invoices exist) -->
+    ${purchaseInvoices.length > 0 ? `
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px 14px; margin-bottom:14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <label for="invSelectFilter" style="font-size:13px; font-weight:800; color:#334155; white-space:nowrap;">
+          🔍 عرض التنبيهات وفقاً لفاتورة:
+        </label>
+        <select id="invSelectFilter" class="form-control" style="flex:1; min-width:220px; font-weight:700; font-size:13px; padding:6px 10px;" onchange="setDiscountAlertFilter(this.value)">
+          <option value="LATEST" ${activeTab === 'LATEST' ? 'selected' : ''}>
+            📌 آخر فاتورة مشتريات مسجلة ${latestInvoice ? `(#${latestInvoice.invoiceNumber} - ${latestInvoice.supplierName})` : ''}
+          </option>
+          ${purchaseInvoices.map((inv, idx) => {
+            const count = getAlertsForInvoice(inv.invoiceNumber).length;
+            const isLatest = idx === 0;
+            return `
+              <option value="${inv.invoiceNumber}" ${activeTab === inv.invoiceNumber ? 'selected' : ''}>
+                📄 فاتورة #${inv.invoiceNumber} - ${inv.supplierName} (${count} تنبيه تغير خصم) ${isLatest ? '⭐️ [الأحدث]' : ''}
+              </option>
+            `;
+          }).join('')}
+          <option value="ALL" ${activeTab === 'ALL' ? 'selected' : ''}>
+            🌐 عرض كافة التنبيهات من جميع الفواتير السابقة (${totalAlertsCount})
+          </option>
+        </select>
       </div>
-    ` : `
-      <div style="display:flex; flex-direction:column; gap:10px;">
-        ${db.discountAlerts.map(alert => `
-          <div class="card" style="border-right: 5px solid ${alert.diff < 0 ? 'var(--danger)' : 'var(--secondary)'}">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-              <div>
-                <div style="font-weight:800; font-size:14px;">${alert.productName}</div>
-                <div style="font-size:11px; color:var(--text-muted);">المورد: ${alert.supplierName} | فاتورة: ${alert.invoiceNumber}</div>
-              </div>
-              <span class="badge ${alert.diff < 0 ? 'badge-red' : 'badge-green'}" style="font-size:12px;">
-                ${alert.diff < 0 ? `انخفاض (${alert.diff}%)` : `زيادة (+${alert.diff}%)`}
-              </span>
-            </div>
+    ` : ''}
 
-            <div style="margin-top:8px; padding:8px; background:#f8fafc; border-radius:8px; font-size:12px; display:flex; justify-content:space-around;">
-              <div>الخصم السابق: <b>${alert.oldDiscount}%</b></div>
-              <div style="color:var(--text-muted);">➔</div>
-              <div>الخصم الجديد: <b style="color:${alert.diff < 0 ? 'var(--danger)' : 'var(--secondary)'}">${alert.newDiscount}%</b></div>
+    <!-- Active Invoice Summary Banner -->
+    ${targetInvoice ? `
+      <div class="card" style="background:#eff6ff; border:1.5px solid #93c5fd; padding:12px 16px; margin-bottom:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px;">
+          <div>
+            <div style="font-size:11px; font-weight:800; color:#1d4ed8; text-transform:uppercase;">
+              ${activeTab === 'LATEST' ? '⭐️ الفاتورة المعروضة: آخر فاتورة شراء تم تسجيلها' : '📄 الفاتورة المحددة'}
             </div>
-
-            <div style="font-size:11px; color:var(--text-muted); margin-top:6px; text-align:left;">
-              التاريخ: ${new Date(alert.timestamp).toLocaleDateString('ar-EG')}
+            <div style="font-size:16px; font-weight:900; color:#1e3a8a; margin-top:2px;">
+              فاتورة: #${targetInvoice.invoiceNumber}
+            </div>
+            <div style="font-size:12px; color:#3b82f6; margin-top:2px;">
+              🏢 المورد: <b>${targetInvoice.supplierName}</b> | 📅 ${formatInvoiceDate(targetInvoice.date)}
             </div>
           </div>
-        `).join('')}
+          <div style="text-align:left;">
+            <div style="font-size:12px; font-weight:800; color:#1e40af;">
+              إجمالي الأصناف: ${targetInvoice.itemsCount || (targetInvoice.items ? targetInvoice.items.length : 0)} صنف
+            </div>
+            <div style="font-size:13px; font-weight:900; color:${displayedAlerts.length > 0 ? '#b45309' : '#15803d'}; margin-top:2px;">
+              ${displayedAlerts.length > 0 ? `⚠️ تم رصد تغير الخصم لـ (${displayedAlerts.length}) صنف` : `✅ لا يوجد تغير في الخصم`}
+            </div>
+          </div>
+        </div>
+      </div>
+    ` : ''}
+
+    <!-- Alerts Count Header -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <span style="font-weight:900; font-size:14px; color:#0f172a;">
+        ${activeTab === 'LATEST' ? `تنبيهات تغير الخصم في آخر فاتورة شراء (${displayedAlerts.length})` : 
+          activeTab === 'ALL' ? `جميع تنبيهات تغير الخصم المسجلة (${displayedAlerts.length})` : 
+          `تنبيهات فاتورة #${targetInvoice ? targetInvoice.invoiceNumber : activeTab} (${displayedAlerts.length})`}
+      </span>
+      ${activeTab !== 'ALL' && totalAlertsCount > displayedAlerts.length ? `
+        <span style="font-size:12px; color:var(--text-muted); cursor:pointer; text-decoration:underline;" onclick="setDiscountAlertFilter('ALL')">
+          (عرض كل التنبيهات: ${totalAlertsCount})
+        </span>
+      ` : ''}
+    </div>
+
+    <!-- Empty State -->
+    ${displayedAlerts.length === 0 ? `
+      <div class="card" style="text-align:center; padding:32px 20px; background:#f0fdf4; border:1.5px solid #86efac;">
+        <div style="font-size:36px; margin-bottom:8px;">✅</div>
+        <div style="font-weight:800; font-size:15px; color:#166534; margin-bottom:6px;">
+          ${activeTab === 'LATEST' && targetInvoice ? `لا يوجد أي تغير في نسب الخصم في آخر فاتورة شراء (#${targetInvoice.invoiceNumber})` :
+            targetInvoice ? `لا توجد تغيرات في نسب الخصم في الفاتورة (#${targetInvoice.invoiceNumber})` :
+            `لم يتم رصد أي تغير في نسب خصم الأدوية حتى الآن.`}
+        </div>
+        <div style="font-size:13px; color:#15803d;">
+          ${targetInvoice ? `جميع نسب خصم الشراء للأدوية في هذه الفاتورة مطابقة تماماً للمسجل سابقاً بالمخزن.` : `عند تسجيل أي فاتورة شراء جديدة تتضمن اختلافاً في نسب الخصم، ستظهر هنا فوراً.`}
+        </div>
+        ${totalAlertsCount > 0 && activeTab !== 'ALL' ? `
+          <div style="margin-top:16px;">
+            <button class="btn btn-outline btn-small" onclick="setDiscountAlertFilter('ALL')" style="font-weight:800; border-color:#0284c7; color:#0284c7;">
+              عرض التنبيهات المسجلة في الفواتير السابقة (${totalAlertsCount} تنبيه) ➔
+            </button>
+          </div>
+        ` : ''}
+      </div>
+    ` : `
+      <!-- Alerts List -->
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        ${displayedAlerts.map(alert => {
+          const product = (alert.productId && db.products.find(p => p.id === alert.productId)) ||
+                          db.products.find(p => p.name.trim().toLowerCase() === String(alert.productName || '').trim().toLowerCase());
+          const offPrice = product ? Number(product.officialPrice || 0) : 0;
+          const oldNet = offPrice > 0 ? (offPrice * (1 - Number(alert.oldDiscount || 0) / 100)) : 0;
+          const newNet = offPrice > 0 ? (offPrice * (1 - Number(alert.newDiscount || 0) / 100)) : 0;
+          const priceDiff = newNet - oldNet;
+
+          return `
+            <div class="card" style="border-right: 6px solid ${alert.diff < 0 ? 'var(--danger)' : 'var(--secondary)'}; padding:14px;">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px;">
+                <div>
+                  <div style="font-weight:900; font-size:15px; color:#0f172a;">${alert.productName}</div>
+                  <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
+                    🏢 المورد: <b>${alert.supplierName || '—'}</b> | 📄 فاتورة: <b>#${alert.invoiceNumber || '—'}</b>
+                  </div>
+                </div>
+                <span class="badge ${alert.diff < 0 ? 'badge-red' : 'badge-green'}" style="font-size:12px; font-weight:800; padding:4px 10px;">
+                  ${alert.diff < 0 ? `🔻 انخفاض في الخصم (${alert.diff}%)` : `🔺 زيادة في الخصم (+${alert.diff}%)`}
+                </span>
+              </div>
+
+              <!-- Comparison Block -->
+              <div style="margin-top:10px; padding:10px; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0; display:flex; justify-content:space-around; align-items:center; flex-wrap:wrap; gap:8px;">
+                <div style="text-align:center;">
+                  <div style="font-size:11px; color:var(--text-muted); font-weight:700;">الخصم السابق</div>
+                  <div style="font-size:16px; font-weight:800; color:#475569;">${alert.oldDiscount}%</div>
+                </div>
+                <div style="font-size:18px; color:#94a3b8;">➔</div>
+                <div style="text-align:center;">
+                  <div style="font-size:11px; color:var(--text-muted); font-weight:700;">الخصم الجديد</div>
+                  <div style="font-size:16px; font-weight:800; color:${alert.diff < 0 ? 'var(--danger)' : 'var(--secondary)'};">${alert.newDiscount}%</div>
+                </div>
+                <div style="text-align:center; padding-right:12px; border-right:1px solid #cbd5e1;">
+                  <div style="font-size:11px; color:var(--text-muted); font-weight:700;">فارق الخصم</div>
+                  <div style="font-size:15px; font-weight:800; color:${alert.diff < 0 ? 'var(--danger)' : 'var(--secondary)'};">
+                    ${alert.diff > 0 ? '+' : ''}${alert.diff}%
+                  </div>
+                </div>
+              </div>
+
+              <!-- Financial Impact (If official price known) -->
+              ${offPrice > 0 ? `
+                <div style="margin-top:8px; padding:6px 10px; background:#f1f5f9; border-radius:6px; font-size:11px; color:#334155; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px;">
+                  <span>سعر الجمهور: <b>${offPrice.toFixed(2)} ج.م</b></span>
+                  <span>تكلفة الشراء: <s>${oldNet.toFixed(2)}</s> ➔ <b style="color:${alert.diff < 0 ? 'var(--danger)' : 'var(--secondary)'}">${newNet.toFixed(2)} ج.م</b></span>
+                  <span style="font-weight:800; color:${alert.diff < 0 ? 'var(--danger)' : 'var(--secondary)'}">
+                    ${alert.diff < 0 ? `(زيادة تكلفة +${Math.abs(priceDiff).toFixed(2)} ج.م/علبة)` : `(وفر تكلفة -${Math.abs(priceDiff).toFixed(2)} ج.م/علبة)`}
+                  </span>
+                </div>
+              ` : ''}
+
+              <div style="font-size:11px; color:var(--text-muted); margin-top:8px; display:flex; justify-content:space-between; align-items:center;">
+                <span>📅 تاريخ الرصد: ${formatInvoiceDate(alert.timestamp)}</span>
+                <button class="btn btn-outline btn-small" style="font-size:11px; padding:2px 8px; color:#dc2626; border-color:#fca5a5;" onclick="deleteSingleDiscountAlert(${alert.id})">
+                  🗑️ حذف التنبيه
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('')}
       </div>
     `}
   `;
